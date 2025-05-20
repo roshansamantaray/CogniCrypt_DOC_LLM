@@ -1,12 +1,14 @@
 package de.upb.docgen;
 
 import java.io.*;
+import java.nio.file.Files;
 import java.util.*;
 
 import crypto.exceptions.CryptoAnalysisException;
 import crypto.rules.CrySLPredicate;
 import crypto.rules.CrySLRule;
 import crypto.rules.CrySLRuleReader;
+import de.upb.docgen.llm.CrySLToLLMGenerator;
 import de.upb.docgen.utils.PredicateTreeGenerator;
 import de.upb.docgen.utils.TreeNode;
 import de.upb.docgen.utils.Utils;
@@ -15,6 +17,8 @@ import freemarker.template.*;
 import org.apache.commons.io.FileUtils;
 
 import javax.print.Doc;
+
+import static de.upb.docgen.llm.CrySLToLLMGenerator.cleanLLMCodeBlock;
 
 /**
  * @author Ritika Singh
@@ -34,8 +38,6 @@ public class DocumentGeneratorMain {
 		// read CryslRules from absolutePath provided by the user
 		System.out.println("Reading CrySL Rules");
 		List<CrySLRule> rules = ruleReader.readFromDirectory(new File(docSettings.getRulesetPathDir()));
-
-
 
 		System.out.println("Reading CrySL Rules Done");
 		ClassEventForb cef = new ClassEventForb();
@@ -66,6 +68,19 @@ public class DocumentGeneratorMain {
 		for (CrySLRule ruleEntry : rules) {
 			ComposedRule composedRule = new ComposedRule();
 			CrySLRule rule = ruleEntry;
+			// CrySL to .txt format
+			String fullClassName = rule.getClassName(); // e.g. "javax.crypto.Cipher"
+			String simpleName = fullClassName.substring(fullClassName.lastIndexOf('.') + 1);
+			String relativePath = "src/main/resources/CrySLRules/" + simpleName + ".crysl";
+			File cryslFile = new File(relativePath);
+
+			if (cryslFile.exists()) {
+				String ruleText = Files.readString(cryslFile.toPath());
+				composedRule.setCryslRuleText("\n" + ruleText);
+			} else {
+				composedRule.setCryslRuleText("// CrySL file not found for: " + simpleName);
+			}
+
 			// Overview section
 			String classname = rule.getClassName();
 			// fully qualified name
@@ -119,6 +134,80 @@ public class DocumentGeneratorMain {
 			composedRuleList.add(composedRule);
 
 			cryslRuleList.add(rule);
+		}
+
+		// LLM Call for Explanation
+
+//		CrySLToLLMGenerator.generateExplanations(composedRuleList, cryslRuleList);
+
+		File cacheDir = new File("Output/resources/llm_cache");
+		if(!cacheDir.exists()) {
+			cacheDir.mkdir();
+		}
+
+		for (int i=0; i<cryslRuleList.size(); i++) {
+			CrySLRule rule = cryslRuleList.get(i);
+			ComposedRule composedRule = composedRuleList.get(i);
+
+			String ruleName = rule.getClassName();
+			String fileSafeName = ruleName.replaceAll("[^a-zA-Z0-9.\\-]", "_");
+			File cacheFile = new File(cacheDir, fileSafeName + ".txt");
+
+			String explanation;
+
+			if (cacheFile.exists()) {
+				explanation = new String(Files.readAllBytes(cacheFile.toPath()));
+				System.out.println(fileSafeName + ".txt exists.");
+			}
+			else {
+				CrySLToLLMGenerator.generateExplanations(List.of(composedRule),List.of(rule));
+				explanation = composedRule.getLlmExplanation();
+				if (!cacheFile.getParentFile().exists()) {
+					Files.createDirectories(cacheFile.getParentFile().toPath());
+				}
+				Files.writeString(cacheFile.toPath(), explanation);
+				System.out.println(fileSafeName + ".txt created.");
+			}
+			composedRule.setLlmExplanation(explanation);
+		}
+
+		//LLM Call for Secure and Insecure Code Generation
+
+		File codeCacheDir = new File("Output/resources/code_cache");
+		codeCacheDir.mkdir();
+
+		for(int i =0; i < cryslRuleList.size(); i++) {
+			CrySLRule rule = cryslRuleList.get(i);
+			ComposedRule composedRule = composedRuleList.get(i);
+			String ruleName = rule.getClassName().replaceAll("[^a-zA-Z0-9.\\-]", "_");
+
+			File secureFile = new File(codeCacheDir, ruleName + "_secure.txt");
+			File insecureFile = new File(codeCacheDir, ruleName + "_insecure.txt");
+
+			String secure;
+			if (secureFile.exists()) {
+				secure = Files.readString(secureFile.toPath());
+				System.out.println(ruleName + "_secure.txt exists.");
+			}
+			else {
+				CrySLToLLMGenerator.generateExample(List.of(composedRule), List.of(rule));
+				secure = cleanLLMCodeBlock(composedRule.getSecureExample());
+				Files.writeString(secureFile.toPath(), secure);
+				System.out.println(ruleName + "_secure.txt created.");
+			}
+
+			String insecure;
+			if (insecureFile.exists()) {
+				insecure = Files.readString(insecureFile.toPath());
+				System.out.println(ruleName + "_insecure.txt exists.");
+			}
+			else {
+				insecure = cleanLLMCodeBlock(composedRule.getInsecureExample());
+				Files.writeString(insecureFile.toPath(), insecure);
+				System.out.println(ruleName + "_insecure.txt created.");
+			}
+			composedRule.setSecureExample(secure);
+			composedRule.setInsecureExample(insecure);
 		}
 
 		// Necessary DataStructure to generate Requires and Ensures Tree

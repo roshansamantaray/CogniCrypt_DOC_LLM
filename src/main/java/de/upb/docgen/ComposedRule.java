@@ -29,6 +29,42 @@ public class ComposedRule {
     private String composedFullClass;
     private String composedLink;
     private String onlyLink;
+    private String llmexplanation;
+    private String cryslRuleText;
+    private String secureExample;
+    private String insecureExample;
+
+    public String getSecureExample() {
+        return secureExample;
+    }
+
+    public void setSecureExample(String secureExample) {
+        this.secureExample = secureExample;
+    }
+
+    public String getInsecureExample() {
+        return insecureExample;
+    }
+
+    public void setInsecureExample(String insecureExample) {
+        this.insecureExample = insecureExample;
+    }
+
+    public String getCryslRuleText() {
+        return cryslRuleText;
+    }
+
+    public void setCryslRuleText(String cryslRuleText) {
+        this.cryslRuleText = cryslRuleText;
+    }
+
+    public String getLlmExplanation() {
+        return llmexplanation;
+    }
+
+    public void setLlmExplanation(String llmexplanation) {
+        this.llmexplanation = llmexplanation;
+    }
 
     public List<String> getAllConstraints() {
         return allConstraints;

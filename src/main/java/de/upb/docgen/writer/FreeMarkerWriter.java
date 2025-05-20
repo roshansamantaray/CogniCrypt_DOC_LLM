@@ -64,6 +64,9 @@ public class FreeMarkerWriter {
             Map<String, Object> input = new HashMap<String, Object>();
             input.put("title", "class");
             input.put("rule", rule);
+            input.put("llmExplanation", rule.getLlmExplanation());
+            input.put("secureExample", rule.getSecureExample());
+            input.put("insecureExample", rule.getInsecureExample());
             TreeNode<String> rootReq = reqToEns.get(rule.getComposedClassName());
             input.put("requires", rootReq); // requires tree parsed by the template
             TreeNode<String> rootEns = ensToReq.get(rule.getComposedClassName());

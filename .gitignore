@@ -11,3 +11,4 @@ shippable/
 *.class
 *.temp
 dotFSMs/
+*.env
