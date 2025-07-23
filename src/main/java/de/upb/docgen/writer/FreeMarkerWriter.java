@@ -58,13 +58,18 @@ public class FreeMarkerWriter {
      * @throws IOException
      * @throws TemplateException
      */
-    public static void createSinglePage(List<ComposedRule> composedRuleList, Configuration cfg, Map<String, TreeNode<String>> reqToEns, Map<String, TreeNode<String>> ensToReq, boolean a, boolean b, boolean c, boolean d, boolean e, boolean f, List<CrySLRule> crySLRules) throws IOException, TemplateException {
+    public static void createSinglePage(List<ComposedRule> composedRuleList, Configuration cfg, Map<String, TreeNode<String>> reqToEns, Map<String, TreeNode<String>> ensToReq, boolean a, boolean b, boolean c, boolean d, boolean e, boolean f, List<CrySLRule> crySLRules, List<String> LANGUAGES) throws IOException, TemplateException {
         for (int i = 0; i < composedRuleList.size(); i++) {
             ComposedRule rule = composedRuleList.get(i);
             Map<String, Object> input = new HashMap<String, Object>();
             input.put("title", "class");
             input.put("rule", rule);
-            input.put("llmExplanation", rule.getLlmExplanation());
+//            Map<String, String> llmExplanation = rule.getLlmExplanation();
+            input.put("englishExplanation",rule.getLlmExplanation().get("English"));
+            input.put("frenchExplanation",rule.getLlmExplanation().get("French"));
+            input.put("portugueseExplanation",rule.getLlmExplanation().get("Portuguese"));
+            input.put("germanExplanation",rule.getLlmExplanation().get("German"));
+
             input.put("secureExample", rule.getSecureExample());
             input.put("insecureExample", rule.getInsecureExample());
             TreeNode<String> rootReq = reqToEns.get(rule.getComposedClassName());

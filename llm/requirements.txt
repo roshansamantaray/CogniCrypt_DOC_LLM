@@ -1,2 +1,9 @@
 openai>=1.0.0
 python-dotenv>=1.0.0
+langchain
+langchain-community
+langchain-huggingface
+faiss-cpu
+beautifulsoup4
+lxml
+sentence-transformers

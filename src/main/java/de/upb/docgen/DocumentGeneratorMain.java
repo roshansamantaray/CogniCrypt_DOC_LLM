@@ -31,6 +31,7 @@ public class DocumentGeneratorMain {
 
 	public static void main(String[] args) throws IOException, TemplateException, CryptoAnalysisException {
 		// create singleton to access parsed flags from other classes
+		List<String> LANGUAGES = List.of("English", "Portuguese", "German", "French");
 		DocSettings docSettings = DocSettings.getInstance();
 		System.out.println("Parsing CLI Flags");
 		docSettings.parseSettingsFromCLI(args);
@@ -150,25 +151,35 @@ public class DocumentGeneratorMain {
 			ComposedRule composedRule = composedRuleList.get(i);
 
 			String ruleName = rule.getClassName();
+
 			String fileSafeName = ruleName.replaceAll("[^a-zA-Z0-9.\\-]", "_");
-			File cacheFile = new File(cacheDir, fileSafeName + ".txt");
 
-			String explanation;
 
-			if (cacheFile.exists()) {
-				explanation = new String(Files.readAllBytes(cacheFile.toPath()));
-				System.out.println(fileSafeName + ".txt exists.");
-			}
-			else {
-				CrySLToLLMGenerator.generateExplanations(List.of(composedRule),List.of(rule));
-				explanation = composedRule.getLlmExplanation();
-				if (!cacheFile.getParentFile().exists()) {
-					Files.createDirectories(cacheFile.getParentFile().toPath());
+			Map<String, String> explanationMap = new HashMap<>();
+			for (String lang : LANGUAGES) {
+				String fileSafeNameWithLanguage = fileSafeName + "_" + lang + ".txt";
+				File cacheFile = new File(cacheDir, fileSafeNameWithLanguage);
+
+				String explanation;
+
+				if (cacheFile.exists()) {
+					explanation = new String(Files.readAllBytes(cacheFile.toPath()));
+					explanationMap.put(lang, explanation);
+					System.out.println(fileSafeNameWithLanguage + " already exists!");
 				}
-				Files.writeString(cacheFile.toPath(), explanation);
-				System.out.println(fileSafeName + ".txt created.");
+				else {
+					if (!cacheFile.getParentFile().exists()) {
+						Files.createDirectories(cacheFile.getParentFile().toPath());
+					}
+					CrySLToLLMGenerator.generateExplanations(List.of(composedRule),List.of(rule));
+					explanation = new String(Files.readAllBytes(cacheFile.toPath()));
+					explanationMap.put(lang, explanation);
+					Files.writeString(cacheFile.toPath(), explanation);
+					System.out.println(fileSafeNameWithLanguage + " is created.");
+				}
+
 			}
-			composedRule.setLlmExplanation(explanation);
+			composedRule.setLlmExplanation(explanationMap);
 		}
 
 		//LLM Call for Secure and Insecure Code Generation
@@ -230,7 +241,7 @@ public class DocumentGeneratorMain {
 		FreeMarkerWriter.createSidebar(composedRuleList, cfg);
 		FreeMarkerWriter.createSinglePage(composedRuleList, cfg, ensToReq, reqToEns, docSettings.isBooleanA(),
 				docSettings.isBooleanB(), docSettings.isBooleanC(), docSettings.isBooleanD(), docSettings.isBooleanE(),
-				docSettings.isBooleanF(), cryslRuleList);
+				docSettings.isBooleanF(), cryslRuleList, LANGUAGES);
 		// copy CryslRulesFolder into generated Cognicrypt folder
 		// specifify this flag to distribute the documentation
 		System.out.println("CogniCryptDOC generated to: " + DocSettings.getInstance().getReportDirectory());

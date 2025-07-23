@@ -14,6 +14,9 @@ import crypto.rules.CrySLPredicate;
  **/
 
 public class CrySLToLLMGenerator {
+
+    private static final List<String> LANGUAGES = List.of("English", "Portuguese", "German", "French");
+
     public static void generateExplanations(List<ComposedRule> composedRuleList, List<CrySLRule> cryslRuleList) {
         for (int i = 0; i < composedRuleList.size(); i++) {
             ComposedRule composedRule = composedRuleList.get(i);
@@ -97,8 +100,9 @@ public class CrySLToLLMGenerator {
 
             // Call LLMService
             try {
-                String explanation = LLMService.getLLMExplanation(cryslData);
+                Map<String, String> explanation = LLMService.getLLMExplanation(cryslData, LANGUAGES);
                 composedRule.setLlmExplanation(explanation);
+                Map<String, String> answer = composedRule.getLlmExplanation();
             } catch (IOException e) {
                 System.err.println("LLM generation failed for " + cryslData.get("className"));
                 e.printStackTrace();
@@ -207,6 +211,7 @@ public class CrySLToLLMGenerator {
         return rawOutput
                 .replaceAll("(?i)```\\s*java", "")  // remove ```java
                 .replaceAll("(?i)```", "")          // remove any remaining ```
+                .replaceAll("(?m)^\\s+", "")
                 .trim();
     }
 
