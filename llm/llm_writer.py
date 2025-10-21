@@ -1,3 +1,4 @@
+# python
 #!/usr/bin/env python3
 import os
 import sys
@@ -6,273 +7,372 @@ import re
 import argparse
 from pathlib import Path
 from dotenv import load_dotenv
-from openai import OpenAI, OpenAIError
+from openai import OpenAI
 
-# Ensure project root is on PYTHONPATH for llm imports
-project_root = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(project_root))
+# Resolve project root and important folders
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RULES_DIR = PROJECT_ROOT / "src" / "main" / "resources" / "CrySLRules"
+SANITIZED_DIR = PROJECT_ROOT / "llm" / "sanitized_rules"
+FILENAME_TEMPLATE = "sanitized_rule_{fqcn}_{lang}.json"
+SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
 
-from llm.rag_utils.vector_store_manager import VectorStoreManager
-from langchain.prompts import ChatPromptTemplate
+def rule_path(fqcn: str, lang: str) -> Path:
+    sanitized_name =  SANITIZED_DIR / FILENAME_TEMPLATE.format(fqcn=fqcn, lang=lang)
+    print(sanitized_name)
+    return sanitized_name
 
-def escape_braces(s: str) -> str:
-    # ord('{') == 123, ord('}') == 125; map them to None to delete
-    return s.replace("{", "{{").replace("}", "}}")
+def load_json(path: Path):
+    try:
+        with path.open(encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"[WARN] Missing file: {path}", file=sys.stderr)
+    except Exception as e:
+        print(f"[ERROR] Could not read {path}: {e}", file=sys.stderr)
+    return None
+
+def clean_item(s):
+    if not isinstance(s, str):
+        return str(s)
+    s2 = s.strip()
+    if s2.startswith(","):
+        s2 = s2.lstrip(",").strip()
+    return s2
+
+def collect_dependency_constraints(target_fqcn: str, language: str):
+    dep_to_constraints = {}
+    deps_order = []
+
+    primary_path = rule_path(target_fqcn, language)
+    primary = load_json(primary_path)
+    if not primary:
+        return deps_order, dep_to_constraints
+
+    deps = primary.get("dependency") or []
+    seen = set()
+    for dep in deps:
+        if dep == target_fqcn or dep in seen:
+            continue
+        seen.add(dep)
+        deps_order.append(dep)
+
+        dep_path = rule_path(dep, language)
+        dep_json = load_json(dep_path)
+        if not dep_json:
+            dep_to_constraints[dep] = []
+            continue
+
+        constraints = dep_json.get("constraints")
+        if constraints is None:
+            constraints = dep_json.get("constraint")
+        if constraints is None:
+            constraints = []
+        if not isinstance(constraints, list):
+            constraints = [constraints]
+        dep_to_constraints[dep] = [clean_item(c) for c in constraints]
+
+    return deps_order, dep_to_constraints
+
+def format_dependency_constraints(deps_order, dep_to_constraints):
+    if not deps_order:
+        return "No dependency constraints supplied."
+    parts = []
+    for dep in deps_order:
+        constraints = dep_to_constraints.get(dep, []) or []
+        if not constraints:
+            parts.append(f"Dependency: {dep}\n  - (no constraints)")
+        else:
+            lines = "\n".join(f"  - {c}" for c in constraints)
+            parts.append(f"Dependency: {dep}\n{lines}")
+    return "\n\n".join(parts)
 
 def crysl_to_json_lines(crysl_text):
-    sections = ["SPEC", "OBJECTS", "EVENTS", "ORDER",
-                "CONSTRAINTS", "REQUIRES", "ENSURES"]
+    sections = ["SPEC", "OBJECTS", "EVENTS", "ORDER", "CONSTRAINTS", "REQUIRES", "ENSURES", "FORBIDDEN"]
     pat = re.compile(r"\b(" + "|".join(sections) + r")\b")
     matches = list(pat.finditer(crysl_text))
     out = {}
     for i, m in enumerate(matches):
         header = m.group(1)
         start = m.end()
-        end = matches[i+1].start() if i+1 < len(matches) else len(crysl_text)
-        # split on real line breaks, drop any empty trailing
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(crysl_text)
         raw_lines = crysl_text[start:end].strip().splitlines()
         lines = [line.strip() for line in raw_lines if line.strip()]
         out[header] = lines
     return out
 
 def clean_llm_output(text: str) -> str:
-    """
-    Strip Markdown code fences, bold markers, and headers.
-    """
-    text = re.sub(r"```(?:java|text)?", "", text)
-    text = re.sub(r"\*\*", "", text)
-    text = re.sub(r"^##\s*", "", text, flags=re.MULTILINE)
+    # Keep Markdown headings; just strip stray code fences
+    text = re.sub(r"^```(?:\w+)?\s*$", "", text, flags=re.MULTILINE)
+    text = re.sub(r"^```\s*$", "", text, flags=re.MULTILINE)
     return text.strip()
 
+def lines_to_text(section) -> str:
+    if isinstance(section, list):
+        return "\n".join(section) if section else "_no entries_"
+    return str(section) if section else "_no entries_"
 
-def validate_and_fill(rule: dict, path: str, language: str) -> dict:
-    """
-    Ensure all required keys exist, warn if missing, and set defaults.
-    """
+def validate_and_fill(rule: dict, language: str) -> dict:
     defaults = {
-        'SPEC': '',
-        'OBJECTS': 'None',
-        'EVENTS': 'N/A',
-        'ORDER': 'N/A',
-        'CONSTRAINTS': 'N/A',
-        'REQUIRES': 'None',
-        'ENSURES': 'N/A',
-        'FORBIDDEN': 'N/A',
-        'LANGUAGE': language
+        "SPEC": "",
+        "OBJECTS": "None",
+        "EVENTS": "N/A",
+        "ORDER": "N/A",
+        "CONSTRAINTS": "N/A",
+        "REQUIRES": "None",
+        "ENSURES": "N/A",
+        "FORBIDDEN": "N/A",
+        "LANGUAGE": language
     }
-    # print(f"Warning: New Keys unaccounted in {rule.get('className')}")
-    # for key in rule:
-    #     if key not in defaults:
-    #         print(f"Warning: unrecognized key '{key}' in {path}, ignoring.", file=sys.stderr)
-
     for key, default in defaults.items():
         if key not in rule:
             rule[key] = default
-    # print(rule)
     return rule
 
+def format_sanitized_rule_for_prompt(sanitized: dict) -> str:
+    if not sanitized:
+        return "No sanitized fields supplied."
+    exclude = {"dependency"}
+    parts = []
+    for key, val in sanitized.items():
+        if key in exclude or val is None:
+            continue
+        k = str(key)
+        if isinstance(val, list):
+            if not val:
+                continue
+            lines = "\n".join(f"- {clean_item(it)}" for it in val)
+            parts.append(f"{k}:\n{lines}")
+        elif isinstance(val, dict):
+            if not val:
+                continue
+            lines = "\n".join(f"- {ik}: {clean_item(iv)}" for ik, iv in val.items())
+            parts.append(f"{k}:\n{lines}")
+        else:
+            parts.append(f"{k}: {clean_item(val)}")
+    return "\n\n".join(parts) if parts else "No sanitized fields supplied."
 
-def generate_semantic_query(client, model: str, class_name: str, objects: str, events: str,
-                            order: str, constraints: str, requires: str,
-                            ensures: str, forbidden: str) -> str:
-    # Earlier Template
-    prompt ="""
-        You are a cryptography-documentation assistant.
-        Given the CrySL rule for class `{class_name}`, produce a single-line search query
-        that will retrieve the most relevant template snippets in.
+def generate_explanation(client,
+                         model: str,
+                         class_name: str,
+                         objects: str,
+                         events: str,
+                         order: str,
+                         constraints: str,
+                         requires: str,
+                         ensures: str,
+                         forbidden: str,
+                         dep_constraints_text: str,
+                         sanitized_summary: str,
+                         raw_crysl_text: str,
+                         explanation_language: str) -> str:
+    prompt = fr"""
+You are a cryptography expert who explains complex CrySL rules to Java developers in clear, natural language.
 
-        CrySL Rule:
-        ```
-        Objects: {objects}
-        Events: {events}
-        Order: {order}
-        Constraints: {constraints}
-        Requires: {requires}
-        Ensures: {ensures}
-        Forbidden: {forbidden}
-        ```
-        """
+You are analyzing the CrySL specification for: `{class_name}`
 
+Raw CrySL Data:
+- OBJECTS: {objects}
+- EVENTS: {events}
+- ORDER: {order}
+- CONSTRAINTS: {constraints}
+- REQUIRES: {requires}
+- ENSURES: {ensures}
+- FORBIDDEN: {forbidden}
+- Dependencies: {dep_constraints_text}
+- Additional context: {sanitized_summary}
+- Original CrySL: {raw_crysl_text}
+
+Your Task: Create a developer-friendly guide that explains how to correctly use this cryptographic class WITHOUT using technical CrySL notation, event labels, or abstract parameter names.
+
+CRITICAL RULES:
+1. NO TABLES containing event labels (like g1, i2, u3) or parameter lists
+2. NO technical identifiers from CrySL should appear in the output
+3. NO abstract variable names (like prePlainText, preCipherTextOffset) in explanations
+4. EVERYTHING must be explained in natural, conversational language
+5. Use concrete, meaningful examples that developers can relate to
+6. Focus on practical usage, not formal specifications
+
+Output Structure - Use these EXACT section headings (start with ## and no leading spaces):
+
+## Overview
+Write 2-3 paragraphs explaining what this class does, its role in Java cryptography, and why developers would use it. Make it conversational and informative.
+
+## Correct Usage
+Explain the complete workflow as a narrative story. Use phrases like:
+- "To start, you'll need to..."
+- "The first step is to..."
+- "After obtaining an instance..."
+- "Finally, complete the operation by..."
+
+Don't just list methods - explain the logical flow and the purpose of each step. Include method names naturally within sentences.
+
+## Parameters and Constraints
+Group related constraints into logical categories and explain them in full sentences. For each constraint:
+- Explain WHAT is restricted and WHY
+- List allowed values with explanations of when to use each
+- Describe the security implications
+
+Format as grouped bullet points with full explanations, like:
+- **Algorithm choices:** [Full explanation of which algorithms are allowed and why]
+- **Key requirements:** [Explanation of what types of keys are needed]
+- **Data handling rules:** [Explanation of buffer sizes, offsets, etc. in practical terms]
+
+When listing allowed values (algorithms, modes, etc.), explain what each means and when to use it.
+
+## Method Variations and Use Cases
+Group methods by their purpose and explain when to use each variation. Structure as:
+
+### [Functional Group Name]
+Explanation of what this group of methods does, followed by:
+- **Scenario 1:** Description and when to use this approach
+- **Scenario 2:** Description and when to use this alternative
+- etc.
+
+For example, instead of listing "init variants i1-i8", group them as "Initialization Options" and explain each scenario where you'd use different parameters.
+
+## Security Requirements
+Translate all REQUIRES/ENSURES predicates into plain English requirements that developers can understand:
+- Instead of "REQUIRES: generatedKey[key]", write something like "Before using this method, ensure your key was generated using a cryptographically secure key generator"
+- Explain what security guarantees the class provides after operations
+- Describe any dependencies on other cryptographic operations
+
+## Common Mistakes to Avoid
+Convert all FORBIDDEN items and constraint violations into practical warnings:
+- Explain what NOT to do and the consequences
+- Include common programming errors related to this class
+- Describe what happens if required steps are skipped
+
+## Quick Reference Checklist
+Create a practical checklist written as questions a developer can verify:
+- Have you [specific action]?
+- Did you ensure [specific requirement]?
+- Is your [component] properly [configured/initialized/etc.]?
+
+Make each item actionable and specific to this class's requirements.
+
+WRITING STYLE GUIDELINES:
+
+1. **Replace Technical Terms:**
+   - Event labels (g1, i2) → Describe the actual operation
+   - Parameter names from CrySL → Meaningful descriptions
+   - Regex patterns → Step-by-step explanations
+   - Predicates → Security requirements in plain English
+
+2. **Use Natural Language Patterns:**
+   - "When you need to..." instead of "Event x1 with parameters..."
+   - "This ensures that..." instead of "ENSURES: predicate[...]"
+   - "You must first..." instead of "REQUIRES: predicate[...]"
+   - "Never call..." instead of "FORBIDDEN: method[...]"
+
+3. **Make It Practical:**
+   - Relate to real-world scenarios
+   - Explain the 'why' behind each requirement
+   - Use analogies where helpful
+   - Focus on what developers need to do, not on formal specifications
+
+4. **Be Specific About Security:**
+   - Explain why each constraint exists
+   - Describe attack scenarios that constraints prevent
+   - Clarify the security impact of each requirement
+
+Remember: Your audience is Java developers who need to use this cryptographic class correctly but may not be security experts. Every explanation should help them understand not just WHAT to do, but WHY it matters for security.
+
+The goal is to produce documentation that a developer can read like a tutorial, not a reference manual. They should understand how to use the class correctly without ever seeing CrySL syntax or formal notation.
+"""
     resp = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": "You are a helpful cryptography assistant."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": "You are a patient teacher who excels at explaining complex technical concepts in simple, practical terms."},
+            {"role": "user", "content": prompt},
         ],
-        temperature=0.0
-    )
-    return resp.choices[0].message.content.strip()
-
-
-def generate_explanation(client, model: str, class_name: str, objects: str, events: str,
-                         order: str, constraints: str, requires: str,
-                         ensures: str, forbidden: str, tpl_snippets: str, explanation_language: str) -> str:
-    tpl_count = len(tpl_snippets.split('\n\n──\n\n'))
-    prompt = f"""
-                
-        You are a Cryptographic Specification Language (CrySL) expert and a Java cryptography assistant.
-
-        You have been given these parsed CrySL elements for class `{class_name}`:
-        **SPEC**: Target class → `{class_name}`  
-        **OBJECTS**:  
-        {objects}  
-        **EVENTS**:  
-        {events}  
-        **ORDER** (regular‐expression sequence):  
-        `{order}`  
-        **CONSTRAINTS** (parameter restrictions):  
-        {constraints}  
-        **REQUIRES** predicates:  
-        {requires}  
-        **ENSURES** predicates:  
-        {ensures}  
-        **FORBIDDEN** methods:  
-        {forbidden}
-
-        Also, here are the top {tpl_count} retrieved template snippets to ground your explanation:
-        {tpl_snippets}
-
-        Your task is to produce a **complete, accurate, and self-contained** explanation of this rule, strictly using only the values provided above. You must:
-
-        1. **No Hallucinations**  
-            - Do not introduce any algorithms, key sizes, or methods beyond those in the JSON.  
-            - If any section is empty or missing, explicitly state “_no X specified_” rather than inventing.  
-
-        2. **CrySL Syntax Breakdown**  
-            **SPEC**: Identify the target class (`className`).  
-            **OBJECTS**: List each object binding (type + name).  
-            **EVENTS**: Explain each labeled method call, parameters, and aggregates.  
-            **ORDER**: Describe the regular-expression sequence (concatenation [,]) , alternation [|], optional [?], zero or more repetition [*],at least one or more repitition [+], grouping [()]).  
-            **CONSTRAINTS**: Enumerate each parameter constraint and any conditional constraints.  
-            **FORBIDDEN**: Methods that must never be called.  
-            **REQUIRES**: Explained as preconditions that must already be ensured.
-            **ENSURES**: Explained as postconditions that generate predicates for others.
-            **NEGATES**: Explained as invalidating previously ensured predicates.  
-
-        3. **Formal Semantics Checks**  
-            **Forbidden check :** Show that no forbidden events occur.  
-            **Ordering check :** Explain how the event sequence matches the ORDER regex.  
-            **Constraint check :** Demonstrate all parameter constraints hold.  
-            **Predicate semantics :** For each ENSURES, REQUIRES, NEGATES predicate, explain when it is generated, required, or invalidated.  
-
-        4. **Structured Explanation**  
-            Use this Markdown outline:
-            1. **Overview** - Brief summary of what the rule enforces.  
-            2. **Correct Usage** - Step-by-step walkthrough of events in order.  
-            3. **Parameters & Constraints** - Table or list of parameters with allowed values.  
-            4. **Predicates & Interactions** - Explain ENSURES/REQUIRES/NEGATES with examples.  
-            5. **Forbidden Patterns** - What must never happen.  
-            6. **Edge Cases** - If any optional or repeating events alter behavior.  
-            7. **Security Rationale** - Why each constraint/order is necessary.
-
-        Respond in **{explanation_language}** and be as precise as possible.
-        """
-
-    resp = client.chat.completions.create(
-        model=model,
-        messages=[
-            {"role": "system", "content": "You are a helpful cryptography assistant."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.2
+        temperature=0.3,
+        max_tokens=4000,
+        stop=["```"]
     )
     return resp.choices[0].message.content
 
-
-def process_rule(path: str, language: str, client, vs_mgr, model: str):
+def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn: str):
     try:
-        with open(path, 'r', encoding='utf-8') as f:
+        with open(crysl_path, "r", encoding="utf-8") as f:
             content = f.read()
-        # print(f"Read {len(content)} characters from {path}")
     except Exception as e:
-        print(f"Error loading JSON from {path}: {e}", file=sys.stderr)
+        print(f"Error loading CrySL from {crysl_path}: {e}", file=sys.stderr)
         return
-    content = escape_braces(content)
-    # print(type(content))
-    # print(content)
+
     crysl_data = crysl_to_json_lines(content)
-    # print(crysl_data)
-    rule = validate_and_fill(crysl_data, path, language)
-    # print(rule)
-    class_name = rule['SPEC']
-    objects = rule['OBJECTS']
-    events = rule['EVENTS']
-    order = rule['ORDER']
-    constraints = rule['CONSTRAINTS']
-    requires = rule['REQUIRES']
-    ensures = rule['ENSURES']
-    forbidden = rule['FORBIDDEN']
-    explanation_language = rule['LANGUAGE']
+    rule = validate_and_fill(crysl_data, language)
 
-    # Stage 1: semantic query
+    # Fallback to FQCN if SPEC missing
+    if isinstance(rule["SPEC"], list):
+        class_name = rule["SPEC"][0] if rule["SPEC"] else target_fqcn
+    else:
+        class_name = rule["SPEC"] or target_fqcn
+
+    # Prepare human-readable blocks
+    objects_txt = lines_to_text(rule["OBJECTS"])
+    events_txt = lines_to_text(rule["EVENTS"])
+    order_txt = lines_to_text(rule["ORDER"])
+    constraints_txt = lines_to_text(rule["CONSTRAINTS"])
+    requires_txt = lines_to_text(rule["REQUIRES"])
+    ensures_txt = lines_to_text(rule["ENSURES"])
+    forbidden_txt = lines_to_text(rule.get("FORBIDDEN", "N/A"))
+
+    # Dependency constraints
+    deps_order, dep_to_constraints = collect_dependency_constraints(target_fqcn, language)
+    dep_constraints_text = format_dependency_constraints(deps_order, dep_to_constraints)
+
+    # Load primary sanitized rule and format its human-friendly fields
+    primary_sanitized = load_json(rule_path(target_fqcn, language))
+    sanitized_summary = format_sanitized_rule_for_prompt(primary_sanitized) if primary_sanitized else "No sanitized fields supplied."
+
     try:
-        query = generate_semantic_query(client, model, class_name, objects, events, order, constraints, requires, ensures, forbidden)
-    except OpenAIError as e:
-        print(f"LLM semantic-query error for {class_name}: {e}", file=sys.stderr)
-        return
-
-    # Stage 2: retrieval
-    tpl_chunks = vs_mgr.similarity_search(query, k=3)
-    snippets = "\n\n──\n\n".join(chunk.page_content for chunk in tpl_chunks)
-    # print(snippets)
-
-    # Stage 3: explanation
-    # print(rule)
-    try:
-        raw_out = generate_explanation(client, model, class_name, objects, events, order, constraints, requires, ensures, forbidden, snippets, explanation_language)
-    except OpenAIError as e:
+        raw_out = generate_explanation(
+            client, model, class_name,
+            objects_txt, events_txt, order_txt, constraints_txt,
+            requires_txt, ensures_txt, forbidden_txt,
+            dep_constraints_text, sanitized_summary, content, language
+        )
+    except Exception as e:
         print(f"LLM explanation error for {class_name}: {e}", file=sys.stderr)
         return
 
+    # Moved inside the function to access raw_out
     cleaned = clean_llm_output(raw_out)
     print(cleaned)
-
+    return cleaned
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate CrySL rule explanations via LLM and FAISS retrieval"
+        description="Generate CrySL rule explanations via LLM (with dependency constraints, no RAG)"
     )
     parser.add_argument(
-        'class_name_full', nargs='+',
-        help='Class Name of the CrySL File'
+        "class_name_full",
+        help="Fully qualified class name of the CrySL rule (e.g., java.security.AlgorithmParameters)"
     )
     parser.add_argument(
-        'language', nargs='+',
-        help='Explaination Language of the CrySL File'
+        "language",
+        help="Explanation language (e.g., English)"
     )
     parser.add_argument(
-        '--index-path', '-i',
-        default='llm/rag_utils/template_faiss_index',
-        help='Path to FAISS index directory'
-    )
-    parser.add_argument(
-        '--model', '-m', default='gpt-4o-mini',
-        help='OpenAI model to use for completions'
+        "--model", "-m", default="gpt-4o-mini",
+        help="OpenAI model to use for completions"
     )
     args = parser.parse_args()
-    class_name = args.class_name_full
-    class_name = class_name[0]
+
+    class_name_full = args.class_name_full
     language = args.language
-    # print(language)
-    # print(type(class_name))
-    # print(class_name)
-    class_name = class_name.rsplit('.', 1)[-1]
-    file_name = class_name+".crysl"
-    directory = "C:/Users/rosha/OneDrive - Universität Paderborn/College/Work/Codes/CogniCrypt_DOC_LLM/src/main/resources/CrySLRules"    # Change to the directory you want to search
 
-    full_path = os.path.join(directory, file_name)
+    simple_name = class_name_full.rsplit(".", 1)[-1]
+    file_name = f"{simple_name}.crysl"
+    full_path = RULES_DIR / file_name
 
-    if os.path.isfile(full_path):
-        pass
-    else:
-        print(f"{file_name} not found in {directory}.")
+    if not full_path.is_file():
+        print(f"{file_name} not found in {RULES_DIR}.", file=sys.stderr)
         return
 
     load_dotenv()
-    vs_mgr = VectorStoreManager()
-    vs_mgr.load_store(index_path=args.index_path)
-    client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
-    process_rule(full_path, language, client, vs_mgr, args.model)
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    process_rule(str(full_path), language, client, args.model, class_name_full)
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()

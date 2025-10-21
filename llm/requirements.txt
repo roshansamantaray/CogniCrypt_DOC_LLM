@@ -7,3 +7,4 @@ faiss-cpu
 beautifulsoup4
 lxml
 sentence-transformers
+pypdf

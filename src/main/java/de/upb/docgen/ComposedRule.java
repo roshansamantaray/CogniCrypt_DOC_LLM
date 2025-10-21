@@ -31,6 +31,19 @@ public class ComposedRule {
     private String composedFullClass;
     private String composedLink;
     private String onlyLink;
+    private Map<String, String> llmExplanation;
+    private String cryslRuleText;
+    private String secureExample;
+    private String insecureExample;
+    private List<String> dependency;
+
+    public List<String> getDependency() {
+        return dependency;
+    }
+
+    public void setDependency(List<String> dependency) {
+        this.dependency = dependency;
+    }
 
     public Map<String, String> getLlmExplanation() {
         return llmExplanation;
@@ -39,11 +52,6 @@ public class ComposedRule {
     public void setLlmExplanation(Map<String, String> llmExplanation) {
         this.llmExplanation = llmExplanation;
     }
-
-    private Map<String, String> llmExplanation;
-    private String cryslRuleText;
-    private String secureExample;
-    private String insecureExample;
 
     public String getSecureExample() {
         return secureExample;

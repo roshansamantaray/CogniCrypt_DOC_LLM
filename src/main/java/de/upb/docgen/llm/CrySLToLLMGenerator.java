@@ -68,6 +68,7 @@ public class CrySLToLLMGenerator {
                 }
             }
 
+            
             cryslData.put("order", order);
 
             // CONSTRAINTS
@@ -90,9 +91,25 @@ public class CrySLToLLMGenerator {
 
             cryslData.put("requires", requires.isEmpty() ? "None" : requires);
 
+            // DEPENDENCY (list of class names this rule depends on, usually providers in leaf->root order excluding self)
+            List<String> dependency = composedRule.getDependency();
+            cryslData.put("dependency", dependency != null ? String.join(", ", dependency) : "N/A");
+
+//            List<String> deps = composedRule.getDependency();
+//            if (deps != null && !deps.isEmpty()) {
+//                // Exclude self if present at end
+//                cryslData.put("dependency", String.join(", ", deps));
+//            } else {
+//                cryslData.put("dependency", composedRule.getDependency().toString());
+//            }
+
             // ENSURES
             List<String> ensures = composedRule.getEnsuresPredicates();
-            cryslData.put("ensures", ensures != null ? String.join(", ", ensures) : "N/A");
+            List<String> ensuresThisPredicate = composedRule.getEnsuresThisPredicates();
+            List<String> ensuresCombined = new java.util.ArrayList<>();
+            if (ensuresThisPredicate != null) ensuresCombined.addAll(ensuresThisPredicate);
+            if (ensures != null) ensuresCombined.addAll(ensures);
+            cryslData.put("ensures", ensuresCombined.isEmpty() ? "N/A" : String.join(", ", ensuresCombined));
 
             // FORBIDDEN METHODS
             List<String> forbidden = composedRule.getForbiddenMethods();

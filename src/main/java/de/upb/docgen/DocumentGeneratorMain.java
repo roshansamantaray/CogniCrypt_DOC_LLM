@@ -9,9 +9,7 @@ import crypto.rules.CrySLPredicate;
 import crypto.rules.CrySLRule;
 import crypto.rules.CrySLRuleReader;
 import de.upb.docgen.llm.CrySLToLLMGenerator;
-import de.upb.docgen.utils.PredicateTreeGenerator;
-import de.upb.docgen.utils.TreeNode;
-import de.upb.docgen.utils.Utils;
+import de.upb.docgen.utils.*;
 import de.upb.docgen.writer.FreeMarkerWriter;
 import freemarker.template.*;
 import org.apache.commons.io.FileUtils;
@@ -137,103 +135,129 @@ public class DocumentGeneratorMain {
 			cryslRuleList.add(rule);
 		}
 
-		// LLM Call for Explanation
+        // Necessary DataStructure to generate Requires and Ensures Tree
+        Map<String, List<Map<String, List<String>>>> ensuresToRequiresMap = Utils.mapPredicates(mapRequires,
+                mapEnsures);
+        Map<String, List<Map<String, List<String>>>> requiresToEnsuresMap = Utils.mapPredicates(mapEnsures,
+                mapRequires);
 
-//		CrySLToLLMGenerator.generateExplanations(composedRuleList, cryslRuleList);
+        Map<String, Set<String>> onlyClassnamesReqToEns = Utils.toOnlyClassNames(ensuresToRequiresMap);
+        Map<String, Set<String>> onlyClassnamesEnsToReq = Utils.toOnlyClassNames(requiresToEnsuresMap);
 
-		File cacheDir = new File("Output/resources/llm_cache");
-		if(!cacheDir.exists()) {
-			cacheDir.mkdir();
-		}
-
-		for (int i=0; i<cryslRuleList.size(); i++) {
-			CrySLRule rule = cryslRuleList.get(i);
-			ComposedRule composedRule = composedRuleList.get(i);
-
-			String ruleName = rule.getClassName();
-
-			String fileSafeName = ruleName.replaceAll("[^a-zA-Z0-9.\\-]", "_");
+        Map<String, TreeNode<String>> reqToEns = PredicateTreeGenerator.buildDependencyTreeMap(onlyClassnamesReqToEns);
+        Map<String, TreeNode<String>> ensToReq = PredicateTreeGenerator.buildDependencyTreeMap(onlyClassnamesEnsToReq);
 
 
-			Map<String, String> explanationMap = new HashMap<>();
-			for (String lang : LANGUAGES) {
-				String fileSafeNameWithLanguage = fileSafeName + "_" + lang + ".txt";
-				File cacheFile = new File(cacheDir, fileSafeNameWithLanguage);
+//        System.out.println("Iv deps  : " + onlyClassnamesEnsToReq.get("javax.crypto.spec.IvParameterSpec"));
+//        System.out.println("GCM deps : " + onlyClassnamesEnsToReq.get("javax.crypto.spec.GCMParameterSpec"));
+//        System.out.println("SR ensures randomized? (sanity) class present: " +
+//                onlyClassnamesEnsToReq.containsKey("java.security.SecureRandom"));
 
-				String explanation;
+//        List<String> order = Utils.leafToRootOrderTopo("javax.crypto.Mac", onlyClassnamesEnsToReq);
+//        Map<String, Set<String>> sanitized =
+//                GraphSanitizer.sanitize(onlyClassnamesEnsToReq, onlyClassnamesReqToEns, "javax.crypto.Cipher");
+//        GraphVerification.verifyOrdering("javax.crypto.Cipher" ,sanitized);
+//        List<String> order = Utils.leafToRootOrderTopo("javax.crypto.Cipher", sanitized);
+//
+//        System.out.println("order: " + order);
 
-				if (cacheFile.exists()) {
-					explanation = new String(Files.readAllBytes(cacheFile.toPath()));
-					explanationMap.put(lang, explanation);
-					System.out.println(fileSafeNameWithLanguage + " already exists!");
-				}
-				else {
-					if (!cacheFile.getParentFile().exists()) {
-						Files.createDirectories(cacheFile.getParentFile().toPath());
-					}
-					CrySLToLLMGenerator.generateExplanations(List.of(composedRule),List.of(rule));
-					explanation = new String(Files.readAllBytes(cacheFile.toPath()));
-					explanationMap.put(lang, explanation);
-					Files.writeString(cacheFile.toPath(), explanation);
-					System.out.println(fileSafeNameWithLanguage + " is created.");
-				}
+        for (int i = 0; i < cryslRuleList.size(); i++) {
+            CrySLRule rule = cryslRuleList.get(i);
+            ComposedRule composedRule = composedRuleList.get(i);
+            String ruleName = rule.getClassName();
+            Map<String, Set<String>> sanitized =
+                    GraphSanitizer.sanitize(onlyClassnamesEnsToReq, onlyClassnamesReqToEns, ruleName);
+            GraphVerification.verifyOrdering(ruleName, sanitized);
+            List<String> order = Utils.leafToRootOrderTopo(ruleName, sanitized);
+            composedRule.setDependency(order);
+        }
 
-			}
-			composedRule.setLlmExplanation(explanationMap);
-		}
 
-		//LLM Call for Secure and Insecure Code Generation
+// LLM Call for Explanation (fixed)
 
-		File codeCacheDir = new File("Output/resources/code_cache");
-		codeCacheDir.mkdir();
+        File cacheDir = new File("Output/resources/llm_cache");
+        Files.createDirectories(cacheDir.toPath());
 
-		for(int i =0; i < cryslRuleList.size(); i++) {
-			CrySLRule rule = cryslRuleList.get(i);
-			ComposedRule composedRule = composedRuleList.get(i);
-			String ruleName = rule.getClassName().replaceAll("[^a-zA-Z0-9.\\-]", "_");
+// 1. Generate all explanations once (adjust if API differs)
+        CrySLToLLMGenerator.generateExplanations(composedRuleList, cryslRuleList);
 
-			File secureFile = new File(codeCacheDir, ruleName + "_secure.txt");
-			File insecureFile = new File(codeCacheDir, ruleName + "_insecure.txt");
+        for (int i = 0; i < cryslRuleList.size(); i++) {
+            CrySLRule rule = cryslRuleList.get(i);
+            ComposedRule composedRule = composedRuleList.get(i);
 
-			String secure;
-			if (secureFile.exists()) {
-				secure = Files.readString(secureFile.toPath());
-				System.out.println(ruleName + "_secure.txt exists.");
-			}
-			else {
-				CrySLToLLMGenerator.generateExample(List.of(composedRule), List.of(rule));
-				secure = cleanLLMCodeBlock(composedRule.getSecureExample());
-				Files.writeString(secureFile.toPath(), secure);
-				System.out.println(ruleName + "_secure.txt created.");
-			}
+            String ruleName = rule.getClassName();
+            String fileSafeName = ruleName.replaceAll("[^a-zA-Z0-9.\\-]", "_");
 
-			String insecure;
-			if (insecureFile.exists()) {
-				insecure = Files.readString(insecureFile.toPath());
-				System.out.println(ruleName + "_insecure.txt exists.");
-			}
-			else {
-				insecure = cleanLLMCodeBlock(composedRule.getInsecureExample());
-				Files.writeString(insecureFile.toPath(), insecure);
-				System.out.println(ruleName + "_insecure.txt created.");
-			}
-			composedRule.setSecureExample(secure);
-			composedRule.setInsecureExample(insecure);
-		}
+            Map<String, String> explanationMap = new HashMap<>();
 
-		// Necessary DataStructure to generate Requires and Ensures Tree
-		Map<String, List<Map<String, List<String>>>> ensuresToRequiresMap = Utils.mapPredicates(mapRequires,
-				mapEnsures);
-		Map<String, List<Map<String, List<String>>>> requiresToEnsuresMap = Utils.mapPredicates(mapEnsures,
-				mapRequires);
+            for (String lang : LANGUAGES) {
+                String fileName = fileSafeName + "_" + lang + ".txt";
+                File cacheFile = new File(cacheDir, fileName);
 
-		Map<String, Set<String>> onlyClassnamesReqToEns = Utils.toOnlyClassNames(ensuresToRequiresMap);
-		Map<String, Set<String>> onlyClassnamesEnsToReq = Utils.toOnlyClassNames(requiresToEnsuresMap);
+                // Retrieve the explanation produced by the generator (adapt getter if different)
+                String explanation = composedRule.getLlmExplanation() != null
+                        ? composedRule.getLlmExplanation().get(lang)
+                        : null;
 
-		Map<String, TreeNode<String>> reqToEns = PredicateTreeGenerator.buildDependencyTreeMap(onlyClassnamesReqToEns);
-		Map<String, TreeNode<String>> ensToReq = PredicateTreeGenerator.buildDependencyTreeMap(onlyClassnamesEnsToReq);
+                if (explanation == null || explanation.isBlank()) {
+                    explanation = "No explanation generated for " + ruleName + " (" + lang + ").";
+                }
 
-		// Freemarker Setup and create cognicryptdoc html pages
+                if (!cacheFile.exists()) {
+                    Files.writeString(cacheFile.toPath(), explanation);
+                    System.out.println(fileName + " written.");
+                } else {
+                    // Optional: refresh from disk to keep consistency
+                    explanation = Files.readString(cacheFile.toPath());
+                    System.out.println(fileName + " already exists.");
+                }
+
+                explanationMap.put(lang, explanation);
+            }
+
+            // Ensure composedRule holds the final map (overwrites any prior one)
+            composedRule.setLlmExplanation(explanationMap);
+        }
+        //LLM Call for Secure and Insecure Code Generation
+
+        File codeCacheDir = new File("Output/resources/code_cache");
+        codeCacheDir.mkdir();
+
+        for(int i =0; i < cryslRuleList.size(); i++) {
+            CrySLRule rule = cryslRuleList.get(i);
+            ComposedRule composedRule = composedRuleList.get(i);
+            String ruleName = rule.getClassName().replaceAll("[^a-zA-Z0-9.\\-]", "_");
+
+            File secureFile = new File(codeCacheDir, ruleName + "_secure.txt");
+            File insecureFile = new File(codeCacheDir, ruleName + "_insecure.txt");
+
+            String secure;
+            if (secureFile.exists()) {
+                secure = Files.readString(secureFile.toPath());
+                System.out.println(ruleName + "_secure.txt exists.");
+            }
+            else {
+                CrySLToLLMGenerator.generateExample(List.of(composedRule), List.of(rule));
+                secure = cleanLLMCodeBlock(composedRule.getSecureExample());
+                Files.writeString(secureFile.toPath(), secure);
+                System.out.println(ruleName + "_secure.txt created.");
+            }
+
+            String insecure;
+            if (insecureFile.exists()) {
+                insecure = Files.readString(insecureFile.toPath());
+                System.out.println(ruleName + "_insecure.txt exists.");
+            }
+            else {
+                insecure = cleanLLMCodeBlock(composedRule.getInsecureExample());
+                Files.writeString(insecureFile.toPath(), insecure);
+                System.out.println(ruleName + "_insecure.txt created.");
+            }
+            composedRule.setSecureExample(secure);
+            composedRule.setInsecureExample(insecure);
+        }
+
+        // Freemarker Setup and create cognicryptdoc html pages
 		System.out.println("Setup Freemarker");
 		Configuration cfg = new Configuration(new Version(2, 3, 20));
 		FreeMarkerWriter.setupFreeMarker(cfg);
