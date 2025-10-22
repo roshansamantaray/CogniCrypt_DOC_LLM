@@ -18,7 +18,6 @@ SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
 
 def rule_path(fqcn: str, lang: str) -> Path:
     sanitized_name =  SANITIZED_DIR / FILENAME_TEMPLATE.format(fqcn=fqcn, lang=lang)
-    print(sanitized_name)
     return sanitized_name
 
 def load_json(path: Path):
@@ -86,8 +85,84 @@ def format_dependency_constraints(deps_order, dep_to_constraints):
             parts.append(f"Dependency: {dep}\n{lines}")
     return "\n\n".join(parts)
 
+def _normalize_listish(value):
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [clean_item(v) for v in value if str(v).strip()]
+    if isinstance(value, str):
+        v = value.strip()
+        return [v] if v else []
+    return [clean_item(value)]
+
+def collect_dependency_ensures(primary_fqcn: str, language: str, depth: int = 1):
+    """Return (deps_order, dep_to_ensures) where dep_to_ensures maps fqcn -> list[str].
+    depth=1 means direct dependencies only. Cycle-safe.
+    """
+    dep_to_ensures = {}
+    deps_order = []
+
+    primary = load_json(rule_path(primary_fqcn, language))
+    if not primary:
+        return deps_order, dep_to_ensures
+
+    roots = primary.get("dependency") or []
+    seen = {primary_fqcn}
+
+    def visit(fqcn: str, cur_depth: int):
+        if fqcn in seen:
+            return
+        seen.add(fqcn)
+        if fqcn not in deps_order:
+            deps_order.append(fqcn)
+
+        data = load_json(rule_path(fqcn, language))
+        if not data:
+            dep_to_ensures[fqcn] = []
+            return
+
+        dep_to_ensures[fqcn] = _normalize_listish(data.get("ensures"))
+
+        # Recurse if requested
+        if cur_depth < depth:
+            for sub in _normalize_listish(data.get("dependency")):
+                visit(sub, cur_depth + 1)
+
+    for dep in roots:
+        if isinstance(dep, str) and dep:
+            visit(dep, 1)
+
+    return deps_order, dep_to_ensures
+
+def format_dependency_ensures(primary_fqcn: str, deps_order, dep_to_ensures):
+    if not deps_order:
+        return f"No dependent component guarantees were available for {primary_fqcn}."
+
+    lines = [
+        f"### How related components influence {primary_fqcn}",
+        ("Below are the guarantees (postconditions) that related classes provide when used correctly. "
+         "Use these to explain why and how the primary class depends on them.\n")
+    ]
+    for fqcn in deps_order:
+        ensures = dep_to_ensures.get(fqcn, []) or []
+        if not ensures:
+            lines.append(f"- **{fqcn}**: *(no ensures available or file missing)*")
+            continue
+        lines.append(f"- **{fqcn}**:")
+        lines.extend([f"  - {e}" for e in ensures])
+    return "\n".join(lines)
+
 def crysl_to_json_lines(crysl_text):
-    sections = ["SPEC", "OBJECTS", "EVENTS", "ORDER", "CONSTRAINTS", "REQUIRES", "ENSURES", "FORBIDDEN"]
+    sections = [
+        "SPEC",
+        "OBJECTS",
+        "EVENTS",
+        "ORDER",
+        "CONSTRAINTS",
+        "REQUIRES",
+        "ENSURES",
+        "FORBIDDEN",
+    ]
     pat = re.compile(r"\b(" + "|".join(sections) + r")\b")
     matches = list(pat.finditer(crysl_text))
     out = {}
@@ -121,7 +196,7 @@ def validate_and_fill(rule: dict, language: str) -> dict:
         "REQUIRES": "None",
         "ENSURES": "N/A",
         "FORBIDDEN": "N/A",
-        "LANGUAGE": language
+        "LANGUAGE": language,
     }
     for key, default in defaults.items():
         if key not in rule:
@@ -151,20 +226,23 @@ def format_sanitized_rule_for_prompt(sanitized: dict) -> str:
             parts.append(f"{k}: {clean_item(val)}")
     return "\n\n".join(parts) if parts else "No sanitized fields supplied."
 
-def generate_explanation(client,
-                         model: str,
-                         class_name: str,
-                         objects: str,
-                         events: str,
-                         order: str,
-                         constraints: str,
-                         requires: str,
-                         ensures: str,
-                         forbidden: str,
-                         dep_constraints_text: str,
-                         sanitized_summary: str,
-                         raw_crysl_text: str,
-                         explanation_language: str) -> str:
+def generate_explanation(
+        client,
+        model: str,
+        class_name: str,
+        objects: str,
+        events: str,
+        order: str,
+        constraints: str,
+        requires: str,
+        ensures: str,
+        forbidden: str,
+        dep_constraints_text: str,
+        dep_ensures_text: str,  # NEW
+        sanitized_summary: str,
+        raw_crysl_text: str,
+        explanation_language: str,
+) -> str:
     prompt = fr"""
 You are a cryptography expert who explains complex CrySL rules to Java developers in clear, natural language.
 
@@ -178,7 +256,9 @@ Raw CrySL Data:
 - REQUIRES: {requires}
 - ENSURES: {ensures}
 - FORBIDDEN: {forbidden}
-- Dependencies: {dep_constraints_text}
+- Dependency Constraints (reference only): {dep_constraints_text}
+- Dependency Guarantees (ENSURES):
+{dep_ensures_text}
 - Additional context: {sanitized_summary}
 - Original CrySL: {raw_crysl_text}
 
@@ -236,6 +316,15 @@ Translate all REQUIRES/ENSURES predicates into plain English requirements that d
 - Explain what security guarantees the class provides after operations
 - Describe any dependencies on other cryptographic operations
 
+**Also incorporate the Dependency Guarantees above:** connect each related class's guarantees to the steps where they matter for `{class_name}`.
+
+## Related Components & Their Guarantees
+Use this section to list and explain guarantees from related classes, and explicitly tie them to `{class_name}` usage decisions. Start by summarizing the list below, then expand with plain-English implications for initialization, parameter selection, and error handling.
+
+---
+{dep_ensures_text}
+---
+
 ## Common Mistakes to Avoid
 Convert all FORBIDDEN items and constraint violations into practical warnings:
 - Explain what NOT to do and the consequences
@@ -277,12 +366,16 @@ WRITING STYLE GUIDELINES:
 
 Remember: Your audience is Java developers who need to use this cryptographic class correctly but may not be security experts. Every explanation should help them understand not just WHAT to do, but WHY it matters for security.
 
-The goal is to produce documentation that a developer can read like a tutorial, not a reference manual. They should understand how to use the class correctly without ever seeing CrySL syntax or formal notation.
+The goal is to produce documentation that a developer can read like a tutorial, not a reference manual. They should understand how to use the class correctly without ever seeing CrySL syntax or formal notation.\
+Respond in **{explanation_language}** and be as precise as possible.
 """
     resp = client.chat.completions.create(
         model=model,
         messages=[
-            {"role": "system", "content": "You are a patient teacher who excels at explaining complex technical concepts in simple, practical terms."},
+            {
+                "role": "system",
+                "content": "You are a patient teacher who excels at explaining complex technical concepts in simple, practical terms.",
+            },
             {"role": "user", "content": prompt},
         ],
         temperature=0.3,
@@ -317,45 +410,69 @@ def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn
     ensures_txt = lines_to_text(rule["ENSURES"])
     forbidden_txt = lines_to_text(rule.get("FORBIDDEN", "N/A"))
 
-    # Dependency constraints
-    deps_order, dep_to_constraints = collect_dependency_constraints(target_fqcn, language)
-    dep_constraints_text = format_dependency_constraints(deps_order, dep_to_constraints)
+    # Dependency constraints (kept for reference)
+    deps_order_c, dep_to_constraints = collect_dependency_constraints(target_fqcn, language)
+    dep_constraints_text = format_dependency_constraints(deps_order_c, dep_to_constraints)
+
+    # Dependency ensures (NEW)
+    deps_order_e, dep_to_ensures = collect_dependency_ensures(target_fqcn, language, depth=1)
+    dep_ensures_text = format_dependency_ensures(target_fqcn, deps_order_e, dep_to_ensures)
 
     # Load primary sanitized rule and format its human-friendly fields
     primary_sanitized = load_json(rule_path(target_fqcn, language))
-    sanitized_summary = format_sanitized_rule_for_prompt(primary_sanitized) if primary_sanitized else "No sanitized fields supplied."
+    sanitized_summary = (
+        format_sanitized_rule_for_prompt(primary_sanitized)
+        if primary_sanitized
+        else "No sanitized fields supplied."
+    )
 
     try:
         raw_out = generate_explanation(
-            client, model, class_name,
-            objects_txt, events_txt, order_txt, constraints_txt,
-            requires_txt, ensures_txt, forbidden_txt,
-            dep_constraints_text, sanitized_summary, content, language
+            client,
+            model,
+            class_name,
+            objects_txt,
+            events_txt,
+            order_txt,
+            constraints_txt,
+            requires_txt,
+            ensures_txt,
+            forbidden_txt,
+            dep_constraints_text,
+            dep_ensures_text,  # NEW
+            sanitized_summary,
+            content,
+            language,
         )
     except Exception as e:
         print(f"LLM explanation error for {class_name}: {e}", file=sys.stderr)
         return
 
-    # Moved inside the function to access raw_out
     cleaned = clean_llm_output(raw_out)
     print(cleaned)
     return cleaned
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Generate CrySL rule explanations via LLM (with dependency constraints, no RAG)"
+        description=(
+            "Generate CrySL rule explanations via LLM (with dependency ENSURES + constraints, no RAG)"
+        )
     )
     parser.add_argument(
         "class_name_full",
-        help="Fully qualified class name of the CrySL rule (e.g., java.security.AlgorithmParameters)"
+        help=(
+            "Fully qualified class name of the CrySL rule (e.g., java.security.AlgorithmParameters)"
+        ),
     )
     parser.add_argument(
         "language",
-        help="Explanation language (e.g., English)"
+        help="Explanation language (e.g., English)",
     )
     parser.add_argument(
-        "--model", "-m", default="gpt-4o-mini",
-        help="OpenAI model to use for completions"
+        "--model",
+        "-m",
+        default="gpt-4o-mini",
+        help="OpenAI model to use for completions",
     )
     args = parser.parse_args()
 
