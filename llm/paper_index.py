@@ -87,7 +87,7 @@ def build_pdf_index(pdf_path: str, cache_dir="rag_cache", emb_model="text-embedd
         idx.build(vectors, ids)
         return idx, chunks
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    raw_text = _extract_pdf_text("C:\\Users\\rosha\\Documents\\CogniCrypt_DOC_LLM\\CogniCrypt_DOC_LLM\\tse19CrySL.pdf")
+    raw_text = _extract_pdf_text(pdf_path)
     raw_chunks = _chunk_text(raw_text)
     chunks = [DocChunk(id=f"C{i}", text=t) for i, t in enumerate(raw_chunks)]
     embeddings = _embed_texts(client, [c.text for c in chunks], emb_model)

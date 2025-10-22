@@ -6,8 +6,13 @@ import json
 import re
 import argparse
 from pathlib import Path
+from typing import Dict, List, Tuple, OrderedDict as _OrderedDict
+import numpy as np
 from dotenv import load_dotenv
 from openai import OpenAI
+
+from paper_index import build_pdf_index
+
 
 # Resolve project root and important folders
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +20,7 @@ RULES_DIR = PROJECT_ROOT / "src" / "main" / "resources" / "CrySLRules"
 SANITIZED_DIR = PROJECT_ROOT / "llm" / "sanitized_rules"
 FILENAME_TEMPLATE = "sanitized_rule_{fqcn}_{lang}.json"
 SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
+PDF_PATH = PROJECT_ROOT / "tse19CrySL.pdf"
 
 def rule_path(fqcn: str, lang: str) -> Path:
     sanitized_name =  SANITIZED_DIR / FILENAME_TEMPLATE.format(fqcn=fqcn, lang=lang)
@@ -38,9 +44,9 @@ def clean_item(s):
         s2 = s2.lstrip(",").strip()
     return s2
 
-def collect_dependency_constraints(target_fqcn: str, language: str):
-    dep_to_constraints = {}
-    deps_order = []
+def collect_dependency_constraints(target_fqcn: str, language: str) -> Tuple[List[str], Dict[str, List[str]]]:
+    dep_to_constraints : Dict[str, List[str]] = {}
+    deps_order: List[str] = []
 
     primary_path = rule_path(target_fqcn, language)
     primary = load_json(primary_path)
@@ -72,7 +78,7 @@ def collect_dependency_constraints(target_fqcn: str, language: str):
 
     return deps_order, dep_to_constraints
 
-def format_dependency_constraints(deps_order, dep_to_constraints):
+def format_dependency_constraints(deps_order: List[str], dep_to_constraints: Dict[str, List[str]]) -> str:
     if not deps_order:
         return "No dependency constraints supplied."
     parts = []
@@ -85,7 +91,7 @@ def format_dependency_constraints(deps_order, dep_to_constraints):
             parts.append(f"Dependency: {dep}\n{lines}")
     return "\n\n".join(parts)
 
-def _normalize_listish(value):
+def _normalize_listish(value) -> List[str]:
     if value is None:
         return []
     if isinstance(value, list):
@@ -95,12 +101,12 @@ def _normalize_listish(value):
         return [v] if v else []
     return [clean_item(value)]
 
-def collect_dependency_ensures(primary_fqcn: str, language: str, depth: int = 1):
+def collect_dependency_ensures(primary_fqcn: str, language: str, depth: int = 1) -> Tuple[List[str], Dict[str, List[str]]]:
     """Return (deps_order, dep_to_ensures) where dep_to_ensures maps fqcn -> list[str].
     depth=1 means direct dependencies only. Cycle-safe.
     """
-    dep_to_ensures = {}
-    deps_order = []
+    dep_to_ensures: Dict[str, List[str]] = {}
+    deps_order: List[str] = []
 
     primary = load_json(rule_path(primary_fqcn, language))
     if not primary:
@@ -134,7 +140,7 @@ def collect_dependency_ensures(primary_fqcn: str, language: str, depth: int = 1)
 
     return deps_order, dep_to_ensures
 
-def format_dependency_ensures(primary_fqcn: str, deps_order, dep_to_ensures):
+def format_dependency_ensures(primary_fqcn: str, deps_order: List[str], dep_to_ensures: Dict[str, List[str]]) -> str:
     if not deps_order:
         return f"No dependent component guarantees were available for {primary_fqcn}."
 
@@ -152,7 +158,7 @@ def format_dependency_ensures(primary_fqcn: str, deps_order, dep_to_ensures):
         lines.extend([f"  - {e}" for e in ensures])
     return "\n".join(lines)
 
-def crysl_to_json_lines(crysl_text):
+def crysl_to_json_lines(crysl_text: str) -> Dict[str, List[str]]:
     sections = [
         "SPEC",
         "OBJECTS",
@@ -165,7 +171,7 @@ def crysl_to_json_lines(crysl_text):
     ]
     pat = re.compile(r"\b(" + "|".join(sections) + r")\b")
     matches = list(pat.finditer(crysl_text))
-    out = {}
+    out: Dict[str, List[str]] = {}
     for i, m in enumerate(matches):
         header = m.group(1)
         start = m.end()
@@ -226,8 +232,56 @@ def format_sanitized_rule_for_prompt(sanitized: dict) -> str:
             parts.append(f"{k}: {clean_item(val)}")
     return "\n\n".join(parts) if parts else "No sanitized fields supplied."
 
+def _embed_texts(client: OpenAI, texts: List[str], model: str = "text-embedding-3-small") -> np.ndarray:
+    resp = client.embeddings.create(model=model, input=texts)
+    return np.asarray([d.embedding for d in resp.data], dtype="float32")
+
+def make_rag_context(
+        client: OpenAI,
+        idx,                  # returned by paper_index.build_pdf_index
+        chunks,               # list of DocChunk (must have .text)
+        emb_model: str,
+        rule_sections_txt: Dict[str, str],
+        k: int = 6
+) -> Tuple[str, str]:
+    """
+    Returns (rag_block, rag_sources_block).
+      - rag_block: concatenated top-k snippets tagged [C1], [C2], ...
+      - rag_sources_block: e.g., "[C1] [C2] [C3]"
+    """
+    query_text = "\n".join([
+        "SPEC: " + (rule_sections_txt.get("SPEC") or ""),
+        "OBJECTS: " + (rule_sections_txt.get("OBJECTS") or ""),
+        "ORDER: " + (rule_sections_txt.get("ORDER") or ""),
+        "CONSTRAINTS: " + (rule_sections_txt.get("CONSTRAINTS") or ""),
+        "REQUIRES: " + (rule_sections_txt.get("REQUIRES") or ""),
+        "ENSURES: " + (rule_sections_txt.get("ENSURES") or ""),
+        ]).strip()
+
+    if not hasattr(idx, "index") or idx.index is None or not chunks:
+        return "", ""
+
+    qvec = _embed_texts(client, [query_text], model=emb_model)[0]
+    D, I = idx.index.search(qvec.reshape(1, -1), k)
+
+    rag_snippets = []
+    cites = []
+    for rank, i in enumerate(I[0], start=1):
+        if i == -1:
+            continue
+        c = chunks[i]
+        tag = f"[C{rank}]"
+        rag_snippets.append(f"{tag} {c.text}")
+        cites.append(tag)
+
+    rag_block = "\n\n".join(rag_snippets) if rag_snippets else ""
+    rag_sources = " ".join(cites) if cites else ""
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    return rag_block, rag_sources
+
 def generate_explanation(
-        client,
+        client: OpenAI,
         model: str,
         class_name: str,
         objects: str,
@@ -242,11 +296,16 @@ def generate_explanation(
         sanitized_summary: str,
         raw_crysl_text: str,
         explanation_language: str,
+        rag_block: str = "",
+        rag_sources: str = "",
 ) -> str:
     prompt = fr"""
 You are a cryptography expert who explains complex CrySL rules to Java developers in clear, natural language.
 
 You are analyzing the CrySL specification for: `{class_name}`
+
+Retrieved context from the CrySL paper (use for background and citations):
+{rag_block if rag_block else "(no retrieved passages)"}
 
 Raw CrySL Data:
 - OBJECTS: {objects}
@@ -337,7 +396,10 @@ Create a practical checklist written as questions a developer can verify:
 - Did you ensure [specific requirement]?
 - Is your [component] properly [configured/initialized/etc.]?
 
-Make each item actionable and specific to this class's requirements.
+Make each item actionable and specific to this class's requirements.\
+
+## Sources
+If you cite the paper, refer inline using {rag_sources or "[C1], [C2], ..."} tags that appear in the retrieved context above.
 
 WRITING STYLE GUIDELINES:
 
@@ -384,7 +446,7 @@ Respond in **{explanation_language}** and be as precise as possible.
     )
     return resp.choices[0].message.content
 
-def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn: str):
+def process_rule(crysl_path: str, language: str, client: OpenAI, model: str, target_fqcn: str, idx=None, chunks=None, k: int = 6, emb_model: str = "text-embedding-3-small"):
     try:
         with open(crysl_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -426,23 +488,42 @@ def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn
         else "No sanitized fields supplied."
     )
 
+    # (Optional) RAG context from the CrySL paper
+    rag_block = ""
+    rag_sources = ""
+    if idx is not None and chunks is not None and hasattr(idx, "index"):
+        sect = {
+            "SPEC": class_name,
+            "OBJECTS": objects_txt,
+            "ORDER": order_txt,
+            "CONSTRAINTS": constraints_txt,
+            "REQUIRES": requires_txt,
+            "ENSURES": ensures_txt,
+        }
+        rag_block, rag_sources = make_rag_context(
+            client, idx, chunks, emb_model=emb_model, rule_sections_txt=sect, k=k
+        )
+
+
     try:
         raw_out = generate_explanation(
-            client,
-            model,
-            class_name,
-            objects_txt,
-            events_txt,
-            order_txt,
-            constraints_txt,
-            requires_txt,
-            ensures_txt,
-            forbidden_txt,
-            dep_constraints_text,
-            dep_ensures_text,  # NEW
-            sanitized_summary,
-            content,
-            language,
+            client=client,
+            model=model,
+            class_name=class_name,
+            objects=objects_txt,
+            events=events_txt,
+            order=order_txt,
+            constraints=constraints_txt,
+            requires=requires_txt,
+            ensures=ensures_txt,
+            forbidden=forbidden_txt,
+            dep_constraints_text=dep_constraints_text,
+            dep_ensures_text=dep_ensures_text,
+            sanitized_summary=sanitized_summary,
+            raw_crysl_text=content,
+            explanation_language=language,
+            rag_block=rag_block,
+            rag_sources=rag_sources,
         )
     except Exception as e:
         print(f"LLM explanation error for {class_name}: {e}", file=sys.stderr)
@@ -469,10 +550,24 @@ def main():
         help="Explanation language (e.g., English)",
     )
     parser.add_argument(
-        "--model",
-        "-m",
-        default="gpt-4o-mini",
+        "--model", "-m", default="gpt-4o-mini",
         help="OpenAI model to use for completions",
+    )
+    parser.add_argument(
+        "--pdf",
+        default=PDF_PATH,
+        help=f"Path to the CrySL paper PDF for RAG (default: {PDF_PATH})"
+    )
+    parser.add_argument(
+        "--k",
+        type=int,
+        default=6,
+        help="How many chunks to retrieve from the paper for context"
+    )
+    parser.add_argument(
+        "--emb-model",
+        default="text-embedding-3-small",
+        help="Embedding model for RAG queries"
     )
     args = parser.parse_args()
 
@@ -480,16 +575,35 @@ def main():
     language = args.language
 
     simple_name = class_name_full.rsplit(".", 1)[-1]
-    file_name = f"{simple_name}.crysl"
-    full_path = RULES_DIR / file_name
+    crysl_filename  = f"{simple_name}.crysl"
+    crysl_full_path  = RULES_DIR / crysl_filename
 
-    if not full_path.is_file():
-        print(f"{file_name} not found in {RULES_DIR}.", file=sys.stderr)
+    if not crysl_full_path .is_file():
+        print(f"{crysl_filename} not found in {RULES_DIR}.", file=sys.stderr)
         return
 
     load_dotenv()
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    process_rule(str(full_path), language, client, args.model, class_name_full)
+    idx = None
+    chunks = None
+    try:
+        if args.pdf and Path(args.pdf).exists():
+            idx, chunks = build_pdf_index(args.pdf, emb_model=args.emb_model)
+        else:
+            print(f"[INFO] Skipping RAG: PDF not found at {args.pdf}", file=sys.stderr)
+    except Exception as e:
+        print(f"[WARN] RAG disabled (index build/load failed): {e}", file=sys.stderr)
+    process_rule(
+        str(crysl_full_path),
+        language,
+        client,
+        args.model,
+        class_name_full,
+        idx=idx,
+        chunks=chunks,
+        k=args.k,
+        emb_model=args.emb_model,
+    )
 
 if __name__ == "__main__":
     main()

@@ -3,7 +3,7 @@ import re
 from typing import List, Dict
 import numpy as np
 from openai import OpenAI
-from .paper_index import build_pdf_index, DocChunk, EmbeddingIndex
+from paper_index import build_pdf_index, DocChunk, EmbeddingIndex
 
 _TOKEN_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]+")
 _NUM_RE = re.compile(r"\b\d+\b")
