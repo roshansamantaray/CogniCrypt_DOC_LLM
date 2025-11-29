@@ -127,18 +127,27 @@ import de.upb.docgen.utils.Utils;
 public class LLMService {
 
     private static final Path PROJECT_ROOT = Paths.get(System.getProperty("user.dir"));
-    private static final Path DEFAULT_PYTHON = Paths.get("llm", ".venv", "Scripts", "python.exe");
+    private static final Path VENV_PY_UNIX = PROJECT_ROOT.resolve(Paths.get("llm", ".venv", "bin", "python"));
+    private static final Path VENV_PY_WIN  = PROJECT_ROOT.resolve(Paths.get("llm", ".venv", "Scripts", "python.exe"));
 
-    private static String resolvePythonExecutable() {
-        if (Files.exists(DEFAULT_PYTHON)) {
-            return DEFAULT_PYTHON.toString();
-        }
-        return "python";
+    private static boolean isWindows() {
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        return os.contains("win");
     }
 
-    public static Map<String, String> getLLMExplanation(Map<String, String> cryslData, List<String> LANGUAGES) throws IOException {
+    private static String resolvePythonExecutable() {
+        if (Files.isExecutable(VENV_PY_UNIX)) {
+            return VENV_PY_UNIX.toString();
+        }
+        if (Files.isExecutable(VENV_PY_WIN)) {
+            return VENV_PY_WIN.toString();
+        }
+        return isWindows() ? "python" : "python3";
+    }
+
+    public static Map<String, String> getLLMExplanation(Map<String, String> cryslData, List<String> LANGUAGES, String backend) throws IOException {
         Gson gson = new Gson();
-        String pythonScriptPath = "llm/llm_writer.py";
+        String pythonScriptPath = backend.equalsIgnoreCase("openai") ? "llm/llm_writer.py" : "llm/llm_writer_ollama.py";
         Map<String, String> result = new HashMap<>();
 
         Path base = PROJECT_ROOT.resolve("llm");

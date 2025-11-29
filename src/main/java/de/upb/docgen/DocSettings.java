@@ -26,6 +26,8 @@ public class DocSettings {
     private boolean genLllmExplanations = true;
     private boolean genLlmExamples = true;
 
+    private String llmBackend = "openai"; // default
+
     private DocSettings() {
 
     }
@@ -114,6 +116,10 @@ public class DocSettings {
         this.booleanG = booleanG;
     }
 
+    public String getLlmBackend() {
+        return llmBackend;
+    }
+
     /**
      * Basic parsing functions see showErrorMessage method for flag explanations.
      * Sets paths and booleans for templates.
@@ -192,6 +198,16 @@ public class DocSettings {
                     if (settings[i].toLowerCase().startsWith("--llm-examples=")) {
                         String v = settings[i].substring("--llm-examples=".length()).trim().toLowerCase();
                         genLlmExamples = !(v.equals("off") || v.equals("false") || v.equals("0"));
+                        break;
+                    }
+                    if (settings[i].toLowerCase().startsWith("--llm-backend=")) {
+                        String v = settings[i].substring("--llm-backend=".length()).trim().toLowerCase();
+                        if (v.equals("openai") || v.equals("ollama")) {
+                            llmBackend = v;
+                        } else {
+                            showErrorMessage(settings[i]);
+                            System.exit(255);
+                        }
                         break;
                     }
                     showErrorMessage(settings[i]);

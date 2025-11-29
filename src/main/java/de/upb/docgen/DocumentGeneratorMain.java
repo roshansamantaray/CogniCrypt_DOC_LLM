@@ -182,7 +182,7 @@ public class DocumentGeneratorMain {
 
 // 1. Generate all explanations once (adjust if API differs)
             if (docSettings.isGenLllmExplanations()) {
-                CrySLToLLMGenerator.generateExplanations(composedRuleList, cryslRuleList);
+                CrySLToLLMGenerator.generateExplanations(composedRuleList, cryslRuleList, docSettings.getLlmBackend());
             } else {
                 System.out.println("LLM explanations: DISABLED by flag");
             }

@@ -17,7 +17,7 @@ public class CrySLToLLMGenerator {
 
     private static final List<String> LANGUAGES = List.of("English", "Portuguese", "German", "French");
 
-    public static void generateExplanations(List<ComposedRule> composedRuleList, List<CrySLRule> cryslRuleList) {
+    public static void generateExplanations(List<ComposedRule> composedRuleList, List<CrySLRule> cryslRuleList, String backend) {
         for (int i = 0; i < composedRuleList.size(); i++) {
             ComposedRule composedRule = composedRuleList.get(i);
             CrySLRule cryslRule = cryslRuleList.get(i);
@@ -117,9 +117,9 @@ public class CrySLToLLMGenerator {
 
             // Call LLMService
             try {
-                Map<String, String> explanation = LLMService.getLLMExplanation(cryslData, LANGUAGES);
+                Map<String, String> explanation = LLMService.getLLMExplanation(cryslData, LANGUAGES, backend);
                 composedRule.setLlmExplanation(explanation);
-                Map<String, String> answer = composedRule.getLlmExplanation();
+                // Map<String, String> answer = composedRule.getLlmExplanation();
             } catch (IOException e) {
                 System.err.println("LLM generation failed for " + cryslData.get("className"));
                 e.printStackTrace();

@@ -352,34 +352,40 @@ public class Utils {
 	}
 
 
-	public static char[] getTemplatesText(String templateName) throws IOException {
-		File file = new File(DocSettings.getInstance().getLangTemplatesPath()+"\\"+templateName);
-		StringBuilder stringBuffer = new StringBuilder();
-		Reader reader = new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8);
-		char[] buff = new char[500];
-		for (int charsRead; (charsRead = reader.read(buff)) != -1;) {
-			stringBuffer.append(buff, 0, charsRead);
-		}
-		reader.close();
-		return buff;
+    public static char[] getTemplatesText(String templateName) throws IOException {
+        // Build path in an OS-independent way
+        String basePath = DocSettings.getInstance().getLangTemplatesPath();
+        File file = new File(basePath, templateName); // uses correct separator
 
-	}
+        StringBuilder stringBuffer = new StringBuilder();
+        try (Reader reader = new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8)) {
+            char[] buff = new char[500];
+            int charsRead;
+            while ((charsRead = reader.read(buff)) != -1) {
+                stringBuffer.append(buff, 0, charsRead);
+            }
+            // Return the accumulated content as a char array
+            return stringBuffer.toString().toCharArray();
+        }
+    }
 
-	public static String getTemplatesTextString(String templateName) throws IOException {
-		File file = new File(DocSettings.getInstance().getLangTemplatesPath()+"\\"+templateName);
-		BufferedReader br = new BufferedReader(new FileReader(file));
-		String strLine = "";
-		String strD = "";
 
-		while ((strLine = br.readLine()) != null) {
-			strD += strLine;
-			strLine = br.readLine();
-		}
-		br.close();
-		return strD + "\n";
-	}
+    public static String getTemplatesTextString(String templateName) throws IOException {
+        String basePath = DocSettings.getInstance().getLangTemplatesPath();
+        File file = new File(basePath, templateName);
 
-	public static String pathForTemplates(String path) {
+        StringBuilder sb = new StringBuilder();
+        try (BufferedReader br = new BufferedReader(new FileReader(file, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = br.readLine()) != null) {
+                sb.append(line).append('\n');
+            }
+        }
+        return sb.toString();
+    }
+
+
+    public static String pathForTemplates(String path) {
 		return path.replaceAll("\\\\","/");
 	}
 

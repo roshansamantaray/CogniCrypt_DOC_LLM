@@ -79,16 +79,24 @@ class OllamaClient:
         self.timeout = timeout
 
     def _post(self, path: str, json_payload):
-        url = self.base_url.rstrip("/") + path
+        # base_url from OLLAMA_URL, endpoint path is expected like "/api/chat"
+        url = self.base_url.rstrip("/") + "/ollama" + path
+
         # small retry logic for transient failures
         retries = 2
         backoff = 0.5
         last_exc = None
+
+        # add Authorization header for remote Ollama
+        headers = {}
+        api_key = os.getenv("OLLAMA_API_KEY")
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+
         for attempt in range(retries + 1):
             try:
-                resp = requests.post(url, json=json_payload, timeout=self.timeout)
+                resp = requests.post(url, json=json_payload, headers=headers, timeout=self.timeout)
                 resp.raise_for_status()
-                # attempt to decode JSON, raise clear error if invalid
                 try:
                     return resp.json()
                 except ValueError as e:
@@ -99,7 +107,6 @@ class OllamaClient:
                     time.sleep(backoff * (1 + attempt))
                     continue
                 raise
-        # if we somehow exit loop without returning, raise last exception
         raise last_exc
 
     # nested helper classes kept for compatibility but not used for binding
@@ -118,18 +125,17 @@ def _make_ollama_client():
     client = OllamaClient()
     # bind functional implementations that use the instance base_url
     def embeddings_create(model: str, input):
-        # Ollama embeddings API expects { "model": "...", "input": [...] }
         payload = {"model": model, "input": input}
         return client._post("/api/embeddings", payload)
 
     def generate_create(model: str, prompt: str, max_tokens: int = 512, temperature: float = 0.2):
-        # simple generate wrapper. Ollama generate endpoint typically accepts {"model":..., "prompt":...}
-        payload = {"model": model, "prompt": prompt, "max_tokens": max_tokens, "temperature": temperature}
-        try:
-            return client._post("/api/generate", payload)
-        except RequestException:
-            # fallback to a completion-like endpoint if needed
-            return client._post("/api/completions", payload)
+        payload = {
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        return client._post("/api/chat", payload)
 
     # attach small namespaces to the client instance (won't mutate nested classes)
     client.embeddings = types.SimpleNamespace(create=embeddings_create)

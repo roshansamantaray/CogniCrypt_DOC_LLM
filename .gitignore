@@ -12,3 +12,6 @@ shippable/
 *.temp
 dotFSMs/
 *.env
+.venv/
+sanitized_rules/
+temp_rules/
