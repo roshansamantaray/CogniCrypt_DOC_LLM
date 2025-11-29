@@ -6,12 +6,19 @@ import json
 import re
 import argparse
 from pathlib import Path
-from typing import Dict, List, Tuple, OrderedDict as _OrderedDict
+from typing import Dict, List, Tuple
 import numpy as np
 from dotenv import load_dotenv
 from openai import OpenAI
 
 from paper_index import build_pdf_index
+
+try:
+    # ensure Python stdout uses UTF-8 (Python 3.7+)
+    sys.stdout.reconfigure(encoding="utf-8")
+except Exception:
+    # fallback: rely on caller to set PYTHONIOENCODING
+    pass
 
 
 # Resolve project root and important folders
@@ -238,20 +245,39 @@ def _embed_texts(client: OpenAI, texts: List[str], model: str = "text-embedding-
 
 def make_rag_context(
         client: OpenAI,
-        idx,                  # returned by paper_index.build_pdf_index
-        chunks,               # list of DocChunk (must have .text)
+        idx,                   # from paper_index.build_pdf_index
+        chunks,                # list of DocChunk (must have .text)
         emb_model: str,
         rule_sections_txt: Dict[str, str],
-        k: int = 6
+        k: int = 6,
+        per_chunk_max: int = 900,   # optional: trim long chunks
 ) -> Tuple[str, str]:
     """
     Returns (rag_block, rag_sources_block).
+
       - rag_block: concatenated top-k snippets tagged [C1], [C2], ...
       - rag_sources_block: e.g., "[C1] [C2] [C3]"
     """
+
+    # 1) Bias retrieval toward CrySL grammar/semantics (so we explain the SYNTAX)
+    syntax_boost = """
+    CRYSL language syntax and semantics:
+    - Sections: SPEC, OBJECTS, EVENTS, ORDER, CONSTRAINTS, REQUIRES, ENSURES, FORBIDDEN
+    - Typestate / usage protocols: ORDER as a regex over EVENTS; use of aggregates
+    - Predicates: REQUIRES / ENSURES; NEGATES; 'after' placement for predicate generation
+    - Helper functions: alg(), mode(), padding(), length(), neverTypeOf(), callTo(), noCallTo()
+    - Examples to retrieve: KeyGenerator (Fig. 2), Cipher (Fig. 3), PBEKeySpec (Fig. 4)
+    - EBNF grammar and formal semantics
+    """.strip()
+
+
+    # 2) Build the query using BOTH the syntax boost and this rule’s actual sections
     query_text = "\n".join([
+        syntax_boost,
+        "THIS RULE:",
         "SPEC: " + (rule_sections_txt.get("SPEC") or ""),
         "OBJECTS: " + (rule_sections_txt.get("OBJECTS") or ""),
+        "EVENTS: " + (rule_sections_txt.get("EVENTS") or ""),
         "ORDER: " + (rule_sections_txt.get("ORDER") or ""),
         "CONSTRAINTS: " + (rule_sections_txt.get("CONSTRAINTS") or ""),
         "REQUIRES: " + (rule_sections_txt.get("REQUIRES") or ""),
@@ -261,23 +287,33 @@ def make_rag_context(
     if not hasattr(idx, "index") or idx.index is None or not chunks:
         return "", ""
 
+    # 3) Embed and search
     qvec = _embed_texts(client, [query_text], model=emb_model)[0]
     D, I = idx.index.search(qvec.reshape(1, -1), k)
 
-    rag_snippets = []
-    cites = []
+    # 4) Build tagged snippets; normalize common PDF ligatures for safer display
+    def _normalize_pdf_text(s: str) -> str:
+        return (s.replace("\ufb01", "fi")
+                .replace("\ufb02", "fl")
+                .replace("\u00ad", "")   # soft hyphen
+                .strip())
+
+    rag_snippets: List[str] = []
+    cites: List[str] = []
+
     for rank, i in enumerate(I[0], start=1):
         if i == -1:
             continue
         c = chunks[i]
         tag = f"[C{rank}]"
-        rag_snippets.append(f"{tag} {c.text}")
+        text = _normalize_pdf_text(getattr(c, "text", ""))
+        if per_chunk_max and len(text) > per_chunk_max:
+            text = text[:per_chunk_max].rsplit(" ", 1)[0] + " ..."
+        rag_snippets.append(f"{tag} {text}")
         cites.append(tag)
 
     rag_block = "\n\n".join(rag_snippets) if rag_snippets else ""
     rag_sources = " ".join(cites) if cites else ""
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     return rag_block, rag_sources
 
 def generate_explanation(
@@ -304,9 +340,6 @@ You are a cryptography expert who explains complex CrySL rules to Java developer
 
 You are analyzing the CrySL specification for: `{class_name}`
 
-Retrieved context from the CrySL paper (use for background and citations):
-{rag_block if rag_block else "(no retrieved passages)"}
-
 Raw CrySL Data:
 - OBJECTS: {objects}
 - EVENTS: {events}
@@ -329,7 +362,8 @@ CRITICAL RULES:
 3. NO abstract variable names (like prePlainText, preCipherTextOffset) in explanations
 4. EVERYTHING must be explained in natural, conversational language
 5. Use concrete, meaningful examples that developers can relate to
-6. Focus on practical usage, not formal specifications
+6. Focus on practical usage, not formal specifications\
+7. Use any provided reference material ONLY to inform your understanding; do NOT quote it, cite it, or mention its existence in the output.
 
 Output Structure - Use these EXACT section headings (start with ## and no leading spaces):
 
@@ -375,7 +409,7 @@ Translate all REQUIRES/ENSURES predicates into plain English requirements that d
 - Explain what security guarantees the class provides after operations
 - Describe any dependencies on other cryptographic operations
 
-**Also incorporate the Dependency Guarantees above:** connect each related class's guarantees to the steps where they matter for `{class_name}`.
+**Also incorporate the Dependency Guarantees below:** connect each related class's guarantees to the steps where they matter for `{class_name}`.
 
 ## Related Components & Their Guarantees
 Use this section to list and explain guarantees from related classes, and explicitly tie them to `{class_name}` usage decisions. Start by summarizing the list below, then expand with plain-English implications for initialization, parameter selection, and error handling.
@@ -396,10 +430,7 @@ Create a practical checklist written as questions a developer can verify:
 - Did you ensure [specific requirement]?
 - Is your [component] properly [configured/initialized/etc.]?
 
-Make each item actionable and specific to this class's requirements.\
-
-## Sources
-If you cite the paper, refer inline using {rag_sources or "[C1], [C2], ..."} tags that appear in the retrieved context above.
+Make each item actionable and specific to this class's requirements.
 
 WRITING STYLE GUIDELINES:
 
@@ -428,21 +459,36 @@ WRITING STYLE GUIDELINES:
 
 Remember: Your audience is Java developers who need to use this cryptographic class correctly but may not be security experts. Every explanation should help them understand not just WHAT to do, but WHY it matters for security.
 
-The goal is to produce documentation that a developer can read like a tutorial, not a reference manual. They should understand how to use the class correctly without ever seeing CrySL syntax or formal notation.\
-Respond in **{explanation_language}** and be as precise as possible.
+The goal is to produce documentation that a developer can read like a tutorial, not a reference manual. They should understand how to use the class correctly without ever seeing CrySL syntax or formal notation.
+Respond in **{explanation_language}** and be as precise as possible.\
+Make sure that the response is in **utf-8** charset only.
 """
+    sys_msgs = [
+        {
+            "role": "system",
+            "content": (
+                "You are a patient teacher who excels at explaining complex technical concepts in simple, practical terms. "
+                "Use any reference material provided to interpret CrySL syntax precisely, but do NOT quote it, cite it, "
+                "or mention its existence in your final answer."
+            ),
+        }
+    ]
+
+    # Add RAG context as hidden reference material (only if available)
+    if rag_block:
+        sys_msgs.append({
+            "role": "system",
+            "content": "REFERENCE MATERIAL (do not quote, cite, or mention this explicitly):\n" + rag_block
+        })
+
     resp = client.chat.completions.create(
         model=model,
-        messages=[
-            {
-                "role": "system",
-                "content": "You are a patient teacher who excels at explaining complex technical concepts in simple, practical terms.",
-            },
+        messages=sys_msgs + [
             {"role": "user", "content": prompt},
         ],
         temperature=0.3,
         max_tokens=4000,
-        stop=["```"]
+        # No stop sequence to avoid accidental truncation on ``` blocks
     )
     return resp.choices[0].message.content
 
@@ -495,6 +541,7 @@ def process_rule(crysl_path: str, language: str, client: OpenAI, model: str, tar
         sect = {
             "SPEC": class_name,
             "OBJECTS": objects_txt,
+            "EVENTS": events_txt,
             "ORDER": order_txt,
             "CONSTRAINTS": constraints_txt,
             "REQUIRES": requires_txt,
@@ -536,7 +583,7 @@ def process_rule(crysl_path: str, language: str, client: OpenAI, model: str, tar
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Generate CrySL rule explanations via LLM (with dependency ENSURES + constraints, no RAG)"
+            "Generate CrySL rule explanations via LLM (with dependency ENSURES + constraints, optional RAG)"
         )
     )
     parser.add_argument(

@@ -578,15 +578,16 @@
 
     <div id="llm-explanation-German" class="llm-explanation">
         <#if rule.llmExplanation["German"]?? && rule.llmExplanation["German"]?has_content>
-            <p class="pre" style="white-space: pre-line;">${rule.llmExplanation["German"]}</p>
+            <div id="llm-md-de" style="white-space: pre-wrap;">${rule.llmExplanation["German"]?html}</div>
         <#else>
             <p><em>No LLM explanation available for German.</em></p>
         </#if>
     </div>
 
+    <!-- French container -->
     <div id="llm-explanation-French" class="llm-explanation">
         <#if rule.llmExplanation["French"]?? && rule.llmExplanation["French"]?has_content>
-            <p class="pre" style="white-space: pre-line;">${rule.llmExplanation["French"]}</p>
+            <div id="llm-md-fr" style="white-space: pre-wrap;">${rule.llmExplanation["French"]?html}</div>
         <#else>
             <p><em>No LLM explanation available for French.</em></p>
         </#if>
@@ -814,6 +815,24 @@
             // Render markdown for Portuguese
             if (lang === 'Portuguese' && document.getElementById('llm-md-pt')) {
                 const container = document.getElementById('llm-md-pt');
+                if (container && !container.getAttribute('data-rendered')) {
+                    container.innerHTML = marked.parse(container.textContent);
+                    container.setAttribute('data-rendered', 'true');
+                }
+            }
+
+            // Render markdown for German
+            if (lang === 'German' && document.getElementById('llm-md-de')) {
+                const container = document.getElementById('llm-md-de');
+                if (container && !container.getAttribute('data-rendered')) {
+                    container.innerHTML = marked.parse(container.textContent);
+                    container.setAttribute('data-rendered', 'true');
+                }
+            }
+
+            // Render markdown for French
+            if (lang === 'French' && document.getElementById('llm-md-fr')) {
+                const container = document.getElementById('llm-md-fr');
                 if (container && !container.getAttribute('data-rendered')) {
                     container.innerHTML = marked.parse(container.textContent);
                     container.setAttribute('data-rendered', 'true');
