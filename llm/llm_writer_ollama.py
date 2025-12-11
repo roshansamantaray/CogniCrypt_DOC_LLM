@@ -239,19 +239,34 @@ def format_sanitized_rule_for_prompt(sanitized: dict) -> str:
             parts.append(f"{k}: {clean_item(val)}")
     return "\n\n".join(parts) if parts else "No sanitized fields supplied."
 
-def _embed_texts(client, texts: List[str], model: str = "text-embedding-3-small") -> np.ndarray:
+def _embed_texts(client, texts: List[str], model: str = "mistral:v0.3") -> np.ndarray:
     """
     Use the Ollama client's embeddings.create to embed a list of texts.
-    Accepts responses shaped as {"data":[{"embedding": [...]}, ...]} or a list.
+    Calls /ollama/api/embeddings once per text with:
+      {"model": model, "prompt": "<string>"}
+    Accepts responses shaped as {"data":[{"embedding":[...]}]}, {"embedding":[...]},
+    a raw list of floats, or a list of {"embedding":[...]}.
     Returns np.ndarray of shape (n, dim) dtype float32.
     """
-    resp = client.embeddings.create(model=model, input=texts)
-    if isinstance(resp, dict) and "data" in resp:
-        return np.asarray([d["embedding"] for d in resp["data"]], dtype="float32")
-    if isinstance(resp, list):
-        arr = [item.get("embedding") if isinstance(item, dict) else item for item in resp]
-        return np.asarray(arr, dtype="float32")
-    raise RuntimeError("Unexpected embeddings response: %r" % (resp,))
+    vectors = []
+
+    for t in texts:
+        resp = client.embeddings.create(model=model, prompt=t)
+
+        if isinstance(resp, dict) and "data" in resp and resp["data"]:
+            vectors.append(resp["data"][0]["embedding"])
+        elif isinstance(resp, dict) and "embedding" in resp:
+            vectors.append(resp["embedding"])
+        elif isinstance(resp, list):
+            if resp and isinstance(resp[0], dict) and "embedding" in resp[0]:
+                vectors.append(resp[0]["embedding"])
+            else:
+                vectors.append(resp)
+        else:
+            raise RuntimeError("Unexpected embeddings response: %r" % (resp,))
+
+    return np.asarray(vectors, dtype="float32")
+
 
 def _generate_text(client, model: str, prompt: str, max_tokens: int = 1500, temperature: float = 0.2) -> str:
     """
@@ -495,7 +510,7 @@ Make sure that the response is in **utf-8** charset only.
     # call Ollama-style generate wrapper
     return _generate_text(client, model, "\n\n".join([m["content"] for m in sys_msgs]) + "\n\n" + prompt, max_tokens=1600, temperature=0.2)
 
-def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn: str, idx=None, chunks=None, k: int = 6, emb_model: str = "text-embedding-3-small"):
+def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn: str, idx=None, chunks=None, k: int = 6, emb_model: str = "mistral:v0.3"):
     try:
         with open(crysl_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -600,8 +615,9 @@ def main():
         help="Explanation language (e.g., English)",
     )
     parser.add_argument(
-        "--model", "-m", default=os.getenv("OLLAMA_MODEL", "llama2"),
-        help="Ollama model to use for completions (e.g., 'llama2')",
+        "--model", "-m",
+        default=os.getenv("OLLAMA_MODEL", "llama3.1:70b"),
+        help="Ollama model to use for completions (e.g., 'llama3.1:70b' or 'mistral:v0.3')",
     )
     parser.add_argument(
         "--pdf",
@@ -616,8 +632,8 @@ def main():
     )
     parser.add_argument(
         "--emb-model",
-        default="text-embedding-3-small",
-        help="Embedding model for RAG queries"
+        default=os.getenv("OLLAMA_EMB_MODEL", "mistral:v0.3"),
+        help="Embedding model for RAG queries (Ollama model name)"
     )
     args = parser.parse_args()
 

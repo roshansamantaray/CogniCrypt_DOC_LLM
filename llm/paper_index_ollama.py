@@ -124,8 +124,9 @@ class OllamaClient:
 def _make_ollama_client():
     client = OllamaClient()
     # bind functional implementations that use the instance base_url
-    def embeddings_create(model: str, input):
-        payload = {"model": model, "input": input}
+    def embeddings_create(model: str, prompt: str):
+        # /ollama/api/embeddings expects: {"model": "...", "prompt": "<string>"}
+        payload = {"model": model, "prompt": prompt}
         return client._post("/api/embeddings", payload)
 
     def generate_create(model: str, prompt: str, max_tokens: int = 512, temperature: float = 0.2):
@@ -142,20 +143,42 @@ def _make_ollama_client():
     client.generate = types.SimpleNamespace(create=generate_create)
     return client
 
-def _embed_texts(client: OllamaClient, texts: List[str], model="text-embedding-3-small") -> np.ndarray:
-    # batch embeddings in a single request
-    resp = client.embeddings.create(model=model, input=texts)
-    # expected shape: {"data":[{"embedding":[...]}...]}
-    data = resp.get("data") if isinstance(resp, dict) else None
-    if not data:
-        # attempt to handle direct list response
-        if isinstance(resp, list):
-            arr = [item.get("embedding") if isinstance(item, dict) else item for item in resp]
-            return np.asarray(arr, dtype="float32")
-        raise RuntimeError("Unexpected embeddings response from Ollama: %r" % (resp,))
-    return np.asarray([d["embedding"] for d in data], dtype="float32")
+def _embed_texts(client: OllamaClient, texts: List[str], model="mistral:v0.3") -> np.ndarray:
+    """
+    Embed a list of texts by calling /ollama/api/embeddings once per text.
+    Handles responses shaped like:
+      - {"data":[{"embedding":[...]}]}
+      - {"embedding":[...]}
+      - [float, float, ...]
+      - [{"embedding":[...]}]
+    """
+    vectors = []
 
-def build_pdf_index(pdf_path: str, cache_dir="rag_cache", emb_model="text-embedding-3-small"):
+    for t in texts:
+        resp = client.embeddings.create(model=model, prompt=t)
+
+        if isinstance(resp, dict):
+            if "data" in resp and resp["data"]:
+                # OpenAI-style: {"data":[{"embedding":[...]}]}
+                vectors.append(resp["data"][0]["embedding"])
+            elif "embedding" in resp:
+                # Direct: {"embedding":[...]}
+                vectors.append(resp["embedding"])
+            else:
+                raise RuntimeError(f"Unexpected embeddings response from Ollama: {resp!r}")
+        elif isinstance(resp, list):
+            # Could be [floats...] or [{"embedding":[...]}]
+            if resp and isinstance(resp[0], dict) and "embedding" in resp[0]:
+                vectors.append(resp[0]["embedding"])
+            else:
+                vectors.append(resp)
+        else:
+            raise RuntimeError(f"Unexpected embeddings response from Ollama: {resp!r}")
+
+    return np.asarray(vectors, dtype="float32")
+
+
+def build_pdf_index(pdf_path: str, cache_dir="rag_cache", emb_model="mistral:v0.3"):
     os.makedirs(cache_dir, exist_ok=True)
     vec_p = Path(cache_dir) / "vectors.npy"
     ids_p = Path(cache_dir) / "ids.json"
