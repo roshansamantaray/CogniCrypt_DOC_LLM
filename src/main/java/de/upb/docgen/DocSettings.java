@@ -21,8 +21,23 @@ public class DocSettings {
     private boolean booleanF = true;
     private boolean booleanG = true;
 
+
+
+    private boolean genLllmExplanations = true;
+    private boolean genLlmExamples = true;
+
+    private String llmBackend = "openai"; // default
+
     private DocSettings() {
 
+    }
+
+    public boolean isGenLlmExamples() {
+        return genLlmExamples;
+    }
+
+    public boolean isGenLllmExplanations() {
+        return genLllmExplanations;
     }
 
     public static DocSettings getInstance() {
@@ -101,6 +116,10 @@ public class DocSettings {
         this.booleanG = booleanG;
     }
 
+    public String getLlmBackend() {
+        return llmBackend;
+    }
+
     /**
      * Basic parsing functions see showErrorMessage method for flag explanations.
      * Sets paths and booleans for templates.
@@ -156,7 +175,41 @@ public class DocSettings {
                 case "--booleang":
                     setBooleanG(false);
                     break;
+                case "--disable-llm-explanations":
+                    genLllmExplanations = false;
+                    break;
+                case "--disable-llm-examples":
+                    genLlmExamples = false;
+                    break;
                 default:
+                    if (settings[i].toLowerCase().startsWith("--llm=")) {
+                        String v = settings[i].substring("--llm=".length()).trim().toLowerCase();
+                        boolean master = !(v.equals("off") || v.equals("false") || v.equals("0"));
+                        // Master applies unless overridden later by specific flags (order of args matters)
+                        genLllmExplanations = master;
+                        genLlmExamples = master;
+                        break;
+                    }
+                    if (settings[i].toLowerCase().startsWith("--llm-explanations=")) {
+                        String v = settings[i].substring("--llm-explanations=".length()).trim().toLowerCase();
+                        genLllmExplanations = !(v.equals("off") || v.equals("false") || v.equals("0"));
+                        break;
+                    }
+                    if (settings[i].toLowerCase().startsWith("--llm-examples=")) {
+                        String v = settings[i].substring("--llm-examples=".length()).trim().toLowerCase();
+                        genLlmExamples = !(v.equals("off") || v.equals("false") || v.equals("0"));
+                        break;
+                    }
+                    if (settings[i].toLowerCase().startsWith("--llm-backend=")) {
+                        String v = settings[i].substring("--llm-backend=".length()).trim().toLowerCase();
+                        if (v.equals("openai") || v.equals("ollama")) {
+                            llmBackend = v;
+                        } else {
+                            showErrorMessage(settings[i]);
+                            System.exit(255);
+                        }
+                        break;
+                    }
                     showErrorMessage(settings[i]);
                     System.exit(255);
             }

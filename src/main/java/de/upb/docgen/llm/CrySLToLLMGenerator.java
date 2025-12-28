@@ -14,7 +14,10 @@ import crypto.rules.CrySLPredicate;
  **/
 
 public class CrySLToLLMGenerator {
-    public static void generateExplanations(List<ComposedRule> composedRuleList, List<CrySLRule> cryslRuleList) {
+
+    private static final List<String> LANGUAGES = List.of("English", "Portuguese", "German", "French");
+
+    public static void generateExplanations(List<ComposedRule> composedRuleList, List<CrySLRule> cryslRuleList, String backend) {
         for (int i = 0; i < composedRuleList.size(); i++) {
             ComposedRule composedRule = composedRuleList.get(i);
             CrySLRule cryslRule = cryslRuleList.get(i);
@@ -65,6 +68,7 @@ public class CrySLToLLMGenerator {
                 }
             }
 
+            
             cryslData.put("order", order);
 
             // CONSTRAINTS
@@ -87,9 +91,25 @@ public class CrySLToLLMGenerator {
 
             cryslData.put("requires", requires.isEmpty() ? "None" : requires);
 
+            // DEPENDENCY (list of class names this rule depends on, usually providers in leaf->root order excluding self)
+            List<String> dependency = composedRule.getDependency();
+            cryslData.put("dependency", dependency != null ? String.join(", ", dependency) : "N/A");
+
+//            List<String> deps = composedRule.getDependency();
+//            if (deps != null && !deps.isEmpty()) {
+//                // Exclude self if present at end
+//                cryslData.put("dependency", String.join(", ", deps));
+//            } else {
+//                cryslData.put("dependency", composedRule.getDependency().toString());
+//            }
+
             // ENSURES
             List<String> ensures = composedRule.getEnsuresPredicates();
-            cryslData.put("ensures", ensures != null ? String.join(", ", ensures) : "N/A");
+            List<String> ensuresThisPredicate = composedRule.getEnsuresThisPredicates();
+            List<String> ensuresCombined = new java.util.ArrayList<>();
+            if (ensuresThisPredicate != null) ensuresCombined.addAll(ensuresThisPredicate);
+            if (ensures != null) ensuresCombined.addAll(ensures);
+            cryslData.put("ensures", ensuresCombined.isEmpty() ? "N/A" : String.join(", ", ensuresCombined));
 
             // FORBIDDEN METHODS
             List<String> forbidden = composedRule.getForbiddenMethods();
@@ -97,8 +117,9 @@ public class CrySLToLLMGenerator {
 
             // Call LLMService
             try {
-                String explanation = LLMService.getLLMExplanation(cryslData);
+                Map<String, String> explanation = LLMService.getLLMExplanation(cryslData, LANGUAGES, backend);
                 composedRule.setLlmExplanation(explanation);
+                // Map<String, String> answer = composedRule.getLlmExplanation();
             } catch (IOException e) {
                 System.err.println("LLM generation failed for " + cryslData.get("className"));
                 e.printStackTrace();
@@ -207,6 +228,7 @@ public class CrySLToLLMGenerator {
         return rawOutput
                 .replaceAll("(?i)```\\s*java", "")  // remove ```java
                 .replaceAll("(?i)```", "")          // remove any remaining ```
+                .replaceAll("(?m)^\\s+", "")
                 .trim();
     }
 

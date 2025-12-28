@@ -1,3 +1,5 @@
+# python
+#!/usr/bin/env python3
 import os
 import sys
 import json
@@ -7,9 +9,9 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 import numpy as np
 from dotenv import load_dotenv
-from openai import OpenAI
 
-from paper_index import build_pdf_index
+# Use the Ollama-based index module
+from paper_index_ollama import build_pdf_index, get_ollama_client
 
 try:
     # ensure Python stdout uses UTF-8 (Python 3.7+)
@@ -237,27 +239,71 @@ def format_sanitized_rule_for_prompt(sanitized: dict) -> str:
             parts.append(f"{k}: {clean_item(val)}")
     return "\n\n".join(parts) if parts else "No sanitized fields supplied."
 
-def _embed_texts(client: OpenAI, texts: List[str], model: str = "text-embedding-3-small") -> np.ndarray:
-    resp = client.embeddings.create(model=model, input=texts)
-    return np.asarray([d.embedding for d in resp.data], dtype="float32")
+def _embed_texts(client, texts: List[str], model: str = "mistral:v0.3") -> np.ndarray:
+    """
+    Use the Ollama client's embeddings.create to embed a list of texts.
+    Calls /ollama/api/embeddings once per text with:
+      {"model": model, "prompt": "<string>"}
+    Accepts responses shaped as {"data":[{"embedding":[...]}]}, {"embedding":[...]},
+    a raw list of floats, or a list of {"embedding":[...]}.
+    Returns np.ndarray of shape (n, dim) dtype float32.
+    """
+    vectors = []
+
+    for t in texts:
+        resp = client.embeddings.create(model=model, prompt=t)
+
+        if isinstance(resp, dict) and "data" in resp and resp["data"]:
+            vectors.append(resp["data"][0]["embedding"])
+        elif isinstance(resp, dict) and "embedding" in resp:
+            vectors.append(resp["embedding"])
+        elif isinstance(resp, list):
+            if resp and isinstance(resp[0], dict) and "embedding" in resp[0]:
+                vectors.append(resp[0]["embedding"])
+            else:
+                vectors.append(resp)
+        else:
+            raise RuntimeError("Unexpected embeddings response: %r" % (resp,))
+
+    return np.asarray(vectors, dtype="float32")
+
+
+def _generate_text(client, model: str, prompt: str, max_tokens: int = 1500, temperature: float = 0.2) -> str:
+    """
+    Call Ollama generate and try to extract text robustly.
+    """
+    resp = client.generate.create(model=model, prompt=prompt, max_tokens=max_tokens, temperature=temperature)
+    # common shapes
+    if isinstance(resp, dict):
+        if "text" in resp and isinstance(resp["text"], str):
+            return resp["text"].strip()
+        if "result" in resp and isinstance(resp["result"], str):
+            return resp["result"].strip()
+        if "output" in resp and isinstance(resp["output"], str):
+            return resp["output"].strip()
+        if "choices" in resp and isinstance(resp["choices"], list) and resp["choices"]:
+            c0 = resp["choices"][0]
+            if isinstance(c0, dict):
+                if "message" in c0 and isinstance(c0["message"], dict):
+                    return c0["message"].get("content", "").strip()
+                if "text" in c0:
+                    return c0.get("text", "").strip()
+    # fallback: stringify
+    return str(resp)
 
 def make_rag_context(
-        client: OpenAI,
-        idx,                   # from paper_index.build_pdf_index
+        client,
+        idx,                   # from paper_index_ollama.build_pdf_index
         chunks,                # list of DocChunk (must have .text)
         emb_model: str,
         rule_sections_txt: Dict[str, str],
         k: int = 6,
-        per_chunk_max: int = 900,   # optional: trim long chunks
+        per_chunk_max: int = 900,
 ) -> Tuple[str, str]:
     """
     Returns (rag_block, rag_sources_block).
-
-      - rag_block: concatenated top-k snippets tagged [C1], [C2], ...
-      - rag_sources_block: e.g., "[C1] [C2] [C3]"
+    Uses the Ollama client to embed the retrieval query and the EmbeddingIndex.search API.
     """
-
-    # 1) Bias retrieval toward CrySL grammar/semantics (so we explain the SYNTAX)
     syntax_boost = """
     CRYSL language syntax and semantics:
     - Sections: SPEC, OBJECTS, EVENTS, ORDER, CONSTRAINTS, REQUIRES, ENSURES, FORBIDDEN
@@ -268,54 +314,36 @@ def make_rag_context(
     - EBNF grammar and formal semantics
     """.strip()
 
+    query_parts = [syntax_boost]
+    for s in ("SPEC", "OBJECTS", "EVENTS", "ORDER", "CONSTRAINTS", "REQUIRES", "ENSURES", "FORBIDDEN"):
+        v = rule_sections_txt.get(s)
+        if v:
+            query_parts.append(f"{s}:\n{v}")
+    query = "\n\n".join(query_parts)
 
-    # 2) Build the query using BOTH the syntax boost and this rule’s actual sections
-    query_text = "\n".join([
-        syntax_boost,
-        "THIS RULE:",
-        "SPEC: " + (rule_sections_txt.get("SPEC") or ""),
-        "OBJECTS: " + (rule_sections_txt.get("OBJECTS") or ""),
-        "EVENTS: " + (rule_sections_txt.get("EVENTS") or ""),
-        "ORDER: " + (rule_sections_txt.get("ORDER") or ""),
-        "CONSTRAINTS: " + (rule_sections_txt.get("CONSTRAINTS") or ""),
-        "REQUIRES: " + (rule_sections_txt.get("REQUIRES") or ""),
-        "ENSURES: " + (rule_sections_txt.get("ENSURES") or ""),
-        ]).strip()
-
-    if not hasattr(idx, "index") or idx.index is None or not chunks:
+    if not idx or not hasattr(idx, "index") or idx.index is None or not chunks:
         return "", ""
 
-    # 3) Embed and search
-    qvec = _embed_texts(client, [query_text], model=emb_model)[0]
-    D, I = idx.index.search(qvec.reshape(1, -1), k)
-
-    # 4) Build tagged snippets; normalize common PDF ligatures for safer display
-    def _normalize_pdf_text(s: str) -> str:
-        return (s.replace("\ufb01", "fi")
-                .replace("\ufb02", "fl")
-                .replace("\u00ad", "")   # soft hyphen
-                .strip())
-
-    rag_snippets: List[str] = []
-    cites: List[str] = []
-
-    for rank, i in enumerate(I[0], start=1):
-        if i == -1:
+    q_vec = _embed_texts(client, [query], model=emb_model)[0]
+    # Use the EmbeddingIndex.search wrapper
+    hits = idx.search(q_vec, k)
+    rag_items = []
+    rag_ids = []
+    for hid, score in hits:
+        matching = next((c for c in chunks if c.id == hid), None)
+        if not matching:
             continue
-        c = chunks[i]
-        tag = f"[C{rank}]"
-        text = _normalize_pdf_text(getattr(c, "text", ""))
+        text = getattr(matching, "text", "")
         if per_chunk_max and len(text) > per_chunk_max:
-            text = text[:per_chunk_max].rsplit(" ", 1)[0] + " ..."
-        rag_snippets.append(f"{tag} {text}")
-        cites.append(tag)
-
-    rag_block = "\n\n".join(rag_snippets) if rag_snippets else ""
-    rag_sources = " ".join(cites) if cites else ""
-    return rag_block, rag_sources
+            text = text[:per_chunk_max] + " ..."
+        rag_items.append(f"[{matching.id}] {text}\n")
+        rag_ids.append(f"[{matching.id}]")
+    rag_block = "\n\n".join(rag_items)
+    rag_sources_block = " ".join(rag_ids)
+    return rag_block, rag_sources_block
 
 def generate_explanation(
-        client: OpenAI,
+        client,
         model: str,
         class_name: str,
         objects: str,
@@ -479,18 +507,10 @@ Make sure that the response is in **utf-8** charset only.
             "content": "REFERENCE MATERIAL (do not quote, cite, or mention this explicitly):\n" + rag_block
         })
 
-    resp = client.chat.completions.create(
-        model=model,
-        messages=sys_msgs + [
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.3,
-        max_tokens=4000,
-        # No stop sequence to avoid accidental truncation on ``` blocks
-    )
-    return resp.choices[0].message.content
+    # call Ollama-style generate wrapper
+    return _generate_text(client, model, "\n\n".join([m["content"] for m in sys_msgs]) + "\n\n" + prompt, max_tokens=1600, temperature=0.2)
 
-def process_rule(crysl_path: str, language: str, client: OpenAI, model: str, target_fqcn: str, idx=None, chunks=None, k: int = 6, emb_model: str = "text-embedding-3-small"):
+def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn: str, idx=None, chunks=None, k: int = 6, emb_model: str = "mistral:v0.3"):
     try:
         with open(crysl_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -581,7 +601,7 @@ def process_rule(crysl_path: str, language: str, client: OpenAI, model: str, tar
 def main():
     parser = argparse.ArgumentParser(
         description=(
-            "Generate CrySL rule explanations via LLM (with dependency ENSURES + constraints, optional RAG)"
+            "Generate CrySL rule explanations via Ollama LLM (with dependency ENSURES + constraints, optional RAG)"
         )
     )
     parser.add_argument(
@@ -595,12 +615,13 @@ def main():
         help="Explanation language (e.g., English)",
     )
     parser.add_argument(
-        "--model", "-m", default="gpt-4o-mini",
-        help="OpenAI model to use for completions",
+        "--model", "-m",
+        default=os.getenv("OLLAMA_MODEL", "llama3.1:70b"),
+        help="Ollama model to use for completions (e.g., 'llama3.1:70b' or 'mistral:v0.3')",
     )
     parser.add_argument(
         "--pdf",
-        default=PDF_PATH,
+        default=str(PDF_PATH),
         help=f"Path to the CrySL paper PDF for RAG (default: {PDF_PATH})"
     )
     parser.add_argument(
@@ -611,8 +632,8 @@ def main():
     )
     parser.add_argument(
         "--emb-model",
-        default="text-embedding-3-small",
-        help="Embedding model for RAG queries"
+        default=os.getenv("OLLAMA_EMB_MODEL", "mistral:v0.3"),
+        help="Embedding model for RAG queries (Ollama model name)"
     )
     args = parser.parse_args()
 
@@ -628,7 +649,7 @@ def main():
         return
 
     load_dotenv()
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    client = get_ollama_client()
     idx = None
     chunks = None
     try:

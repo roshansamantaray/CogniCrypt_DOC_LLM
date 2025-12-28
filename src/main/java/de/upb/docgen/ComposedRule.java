@@ -1,6 +1,8 @@
 package de.upb.docgen;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * @author Sven Feldmann
@@ -29,10 +31,27 @@ public class ComposedRule {
     private String composedFullClass;
     private String composedLink;
     private String onlyLink;
-    private String llmexplanation;
+    private Map<String, String> llmExplanation;
     private String cryslRuleText;
     private String secureExample;
     private String insecureExample;
+    private List<String> dependency;
+
+    public List<String> getDependency() {
+        return dependency;
+    }
+
+    public void setDependency(List<String> dependency) {
+        this.dependency = dependency;
+    }
+
+    public Map<String, String> getLlmExplanation() {
+        return llmExplanation;
+    }
+
+    public void setLlmExplanation(Map<String, String> llmExplanation) {
+        this.llmExplanation = llmExplanation;
+    }
 
     public String getSecureExample() {
         return secureExample;
@@ -56,14 +75,6 @@ public class ComposedRule {
 
     public void setCryslRuleText(String cryslRuleText) {
         this.cryslRuleText = cryslRuleText;
-    }
-
-    public String getLlmExplanation() {
-        return llmexplanation;
-    }
-
-    public void setLlmExplanation(String llmexplanation) {
-        this.llmexplanation = llmexplanation;
     }
 
     public List<String> getAllConstraints() {

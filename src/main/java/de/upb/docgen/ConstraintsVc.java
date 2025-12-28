@@ -30,7 +30,7 @@ public class ConstraintsVc {
     }
 
     private static char[] getTemplateVCCon() throws IOException {
-        return Utils.getTemplatesText("ConstraintsVcClauseCon");
+        return Utils.getTemplatesText("ConstraintsVCClauseCon");
     }
 
     public ArrayList<String> getConstraintsVc(CrySLRule rule) throws IOException {
