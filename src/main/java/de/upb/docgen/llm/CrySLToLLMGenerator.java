@@ -225,13 +225,22 @@ public class CrySLToLLMGenerator {
     public static String cleanLLMCodeBlock(String rawOutput) {
         if (rawOutput == null) return "";
 
+        // Prefer extracting the fenced code block (keeps indentation)
+        java.util.regex.Pattern p = java.util.regex.Pattern.compile(
+                "```(?:\\s*java)?\\s*\\R([\\s\\S]*?)\\R```",
+                java.util.regex.Pattern.CASE_INSENSITIVE
+        );
+        java.util.regex.Matcher m = p.matcher(rawOutput);
+        if (m.find()) {
+            return m.group(1).stripTrailing(); // keep indentation, only trim trailing whitespace at end
+        }
+
+        // Fallback: just remove fences if present (still keep indentation)
         return rawOutput
-                .replaceAll("(?i)```\\s*java", "")  // remove ```java
-                .replaceAll("(?i)```", "")          // remove any remaining ```
-                .replaceAll("(?m)^\\s+", "")
+                .replaceAll("(?i)```\\s*java", "")
+                .replaceAll("(?i)```", "")
                 .trim();
     }
-
 
     private static String formatPredicate(CrySLPredicate pred) {
         String name = pred.getPredName(); // correct method name

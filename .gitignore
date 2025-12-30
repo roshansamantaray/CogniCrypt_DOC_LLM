@@ -15,3 +15,4 @@ dotFSMs/
 .venv/
 sanitized_rules/
 temp_rules/
+rag_cache/

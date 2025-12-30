@@ -68,16 +68,24 @@ def load_sanitized_rule(fqcn: str, languages: List[str]) -> Optional[Dict]:
 
 def crysl_to_json_lines(crysl_text: str) -> Dict[str, List[str]]:
     sections = ["SPEC", "OBJECTS", "EVENTS", "ORDER", "CONSTRAINTS", "REQUIRES", "ENSURES", "FORBIDDEN"]
-    pattern = re.compile(r"\\b(" + "|".join(sections) + r")\\b")
+
+    # Match headers at start of line, allow optional ":" and trailing whitespace
+    pattern = re.compile(r"(?m)^(%s)\b\s*:?\s*" % "|".join(sections))
+
     matches = list(pattern.finditer(crysl_text))
     parsed: Dict[str, List[str]] = {}
+
     for idx, match in enumerate(matches):
         header = match.group(1)
         start = match.end()
         end = matches[idx + 1].start() if idx + 1 < len(matches) else len(crysl_text)
-        lines = [line.strip() for line in crysl_text[start:end].strip().splitlines() if line.strip()]
+
+        chunk = crysl_text[start:end].strip()
+        lines = [line.strip() for line in chunk.splitlines() if line.strip()]
         parsed[header] = lines
+
     return parsed
+
 
 
 def lines_to_text(section) -> str:

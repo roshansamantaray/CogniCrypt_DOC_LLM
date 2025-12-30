@@ -143,6 +143,15 @@ public class FreeMarkerWriter {
         try (Writer fileWriter = new FileWriter(new File(DocSettings.getInstance().getReportDirectory() + File.separator+"rootpage.html"))) {
             rootpageTemplate.process(input, fileWriter);
         }
+        Template cryslTemplate = cfg.getTemplate(
+                Utils.pathForTemplates(DocSettings.getInstance().getFtlTemplatesPath() + "/" + "crysl.ftl")
+        );
+        try (Writer fileWriter = new FileWriter(
+                new File(DocSettings.getInstance().getReportDirectory() + File.separator + "crysl.html")
+        )) {
+            cryslTemplate.process(input, fileWriter);
+        }
+
     }
 }
 
