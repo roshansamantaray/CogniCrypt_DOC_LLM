@@ -138,7 +138,16 @@ public class LLMService {
 
         String pythonScriptPath = "llm/llm_code_writer_" + type + ".py";
         String pythonPath = resolvePythonExecutable();
-        ProcessBuilder pb = new ProcessBuilder(pythonPath, pythonScriptPath, tempFile.toString());
+        String rulesDir = Paths.get("src", "main", "resources", "CrySLRules")
+                .toAbsolutePath()
+                .toString();
+
+        ProcessBuilder pb = new ProcessBuilder(
+                pythonPath,
+                pythonScriptPath,
+                tempFile.toString(),
+                "--rules-dir", rulesDir
+        );
         pb.directory(PROJECT_ROOT.toFile());
         pb.redirectErrorStream(true);
 
