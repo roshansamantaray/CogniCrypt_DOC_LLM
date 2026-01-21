@@ -14,19 +14,12 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.*;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class Utils {
-
-    private static final class Frame {
-        final String node;
-        final boolean expanded;
-        Frame(String node, boolean expanded) { this.node = node; this.expanded = expanded; }
-    }
 
     private static final int MAX_BYTES = 2_000_000; // 2MB guard
     private static final Pattern TAG_PATTERN = Pattern.compile("(?s)<[^>]+>");
@@ -37,9 +30,6 @@ public class Utils {
     );
 
     private static final Gson GSON = new GsonBuilder().disableHtmlEscaping().setPrettyPrinting().create();
-    private static final Set<String> ALLOWED_KEYS = Set.of(
-            "className","objects","ensures","constraints","requires","order","events","forbidden","explanationLanguage","dependency"
-    );
 
     /**
      * Secure sanitizer entry.
@@ -98,7 +88,7 @@ public class Utils {
     }
 
     private static void enforceUnderBase(Path path, Path base) throws IOException {
-        Path normBase = base.toRealPath();
+        Path normBase = base.toAbsolutePath().normalize();
         Path norm = path.toAbsolutePath().normalize();
         if (!norm.startsWith(normBase)) {
             throw new IOException("Path escapes base: " + path);
@@ -229,13 +219,32 @@ public class Utils {
 //    }
 
     public static File getFileFromResources(String fileName) {
-        URL resource = Utils.class.getResource(fileName);
-        if (resource == null) {
-            throw new IllegalArgumentException("File could not be found!");
-        } else {
-            return new File(resource.getFile());
+        if (fileName == null || fileName.isBlank()) {
+            throw new IllegalArgumentException("fileName must not be null/blank");
         }
+
+        String normalized = fileName.startsWith("/") ? fileName : ("/" + fileName);
+        URL resource = Utils.class.getResource(normalized);
+        if (resource == null) {
+            throw new IllegalArgumentException("File could not be found in resources: " + fileName);
+        }
+
+        // Dev-mode (resources on disk)
+        if ("file".equalsIgnoreCase(resource.getProtocol())) {
+            try {
+                return new File(resource.toURI());
+            } catch (Exception e) {
+                // fallback (should be rare)
+                return new File(resource.getFile());
+            }
+        }
+
+
+        // Packaged (jar:, etc.) -> extract safely
+        String classpathPath = normalized.substring(1); // remove leading '/'
+        return extract(classpathPath);
     }
+
 
 	public static String replaceLast(String string, String toReplace, String replacement) {
 		int pos = string.lastIndexOf(toReplace);
@@ -352,42 +361,88 @@ public class Utils {
 	}
 
 
-    public static char[] getTemplatesText(String templateName) throws IOException {
-        // Build path in an OS-independent way
-        String basePath = DocSettings.getInstance().getLangTemplatesPath();
-        File file = new File(basePath, templateName); // uses correct separator
+	public static char[] getTemplatesText(String templateName) throws IOException {
+        return getTemplatesTextString(templateName).toCharArray();
+    }
 
-        StringBuilder stringBuffer = new StringBuilder();
-        try (Reader reader = new InputStreamReader(new FileInputStream(file), StandardCharsets.UTF_8)) {
-            char[] buff = new char[500];
-            int charsRead;
-            while ((charsRead = reader.read(buff)) != -1) {
-                stringBuffer.append(buff, 0, charsRead);
+
+	public static String getTemplatesTextString(String templateName) throws IOException {
+        if (templateName == null || templateName.isBlank()) {
+            throw new IllegalArgumentException("templateName must not be null/blank");
+        }
+
+        String langTemplatesPath = DocSettings.getInstance().getLangTemplatesPath();
+
+        // Disk override when --langTemplatesPath is provided
+        if (langTemplatesPath != null && !langTemplatesPath.trim().isEmpty()) {
+            File file = new File(langTemplatesPath, templateName);
+            if (!file.isFile()) {
+                throw new FileNotFoundException("Template not found at --langTemplatesPath: " + file.getAbsolutePath());
             }
-            // Return the accumulated content as a char array
-            return stringBuffer.toString().toCharArray();
+            return Files.readString(file.toPath(), StandardCharsets.UTF_8);
+        }
+
+        // Bundled fallback: resources/Templates/<templateName>
+        String resourcePath = "Templates/" + templateName;
+        try (InputStream in = Utils.class.getClassLoader().getResourceAsStream(resourcePath)) {
+            if (in == null) {
+                throw new FileNotFoundException("Bundled template not found on classpath: " + resourcePath);
+            }
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
     }
 
 
-    public static String getTemplatesTextString(String templateName) throws IOException {
-        String basePath = DocSettings.getInstance().getLangTemplatesPath();
-        File file = new File(basePath, templateName);
-
-        StringBuilder sb = new StringBuilder();
-        try (BufferedReader br = new BufferedReader(new FileReader(file, StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = br.readLine()) != null) {
-                sb.append(line).append('\n');
-            }
-        }
-        return sb.toString();
-    }
-
-
-    public static String pathForTemplates(String path) {
+	public static String pathForTemplates(String path) {
 		return path.replaceAll("\\\\","/");
 	}
+
+	public static File extract(String filePath) {
+        try {
+            if (filePath == null || filePath.isBlank()) {
+                throw new IllegalArgumentException("filePath must not be null/blank");
+            }
+
+            // Normalize resource path (ClassLoader expects NO leading '/')
+            String resourcePath = filePath.startsWith("/") ? filePath.substring(1) : filePath;
+
+            InputStream classIS = Utils.class.getClassLoader().getResourceAsStream(resourcePath);
+            if (classIS == null) {
+                throw new FileNotFoundException("Resource not found on classpath: " + resourcePath);
+            }
+
+            // Create a SAFE temp file name (no '/', prefix >= 3 chars)
+            String baseName = resourcePath;
+            int lastSlash = Math.max(baseName.lastIndexOf('/'), baseName.lastIndexOf('\\'));
+            if (lastSlash >= 0) baseName = baseName.substring(lastSlash + 1);
+
+            String prefix = baseName;
+            String suffix = null;
+
+            int dot = baseName.lastIndexOf('.');
+            if (dot > 0 && dot < baseName.length() - 1) {
+                prefix = baseName.substring(0, dot);
+                suffix = baseName.substring(dot); // includes ".ftl", ".properties", etc.
+            }
+
+            prefix = prefix.replaceAll("[^A-Za-z0-9._-]", "_");
+            if (prefix.length() < 3) prefix = (prefix + "___").substring(0, 3);
+
+            File f = File.createTempFile(prefix + "-", suffix);
+            f.deleteOnExit();
+
+            try (classIS; OutputStream resourceOS = new FileOutputStream(f)) {
+                classIS.transferTo(resourceOS);
+            }
+
+            return f;
+
+        } catch (Exception e) {
+            // Keep your old behavior of not changing the signature,
+            // but fail fast (returning null causes NPE later)
+            throw new IllegalStateException("Error extracting resource from jar: " + filePath + " -> " + e.getMessage(), e);
+        }
+    }
 
     public static List<String> leafToRootOrderTopo(String start, Map<String, Set<String>> adj) {
         // 1) Collect reachable nodes from `start` (following adj: class -> providers)

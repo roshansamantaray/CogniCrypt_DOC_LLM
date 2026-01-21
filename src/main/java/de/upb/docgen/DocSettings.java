@@ -120,6 +120,20 @@ public class DocSettings {
         return llmBackend;
     }
 
+    private static String requireValue(String[] settings, int i, String flagName) {
+    if (i + 1 >= settings.length) {
+        showErrorMessage("Missing value for " + flagName);
+        System.exit(255);
+    }
+    String v = settings[i + 1];
+    if (v == null || v.trim().isEmpty() || v.trim().startsWith("--")) {
+        showErrorMessage("Invalid value for " + flagName + ": " + v);
+        System.exit(255);
+    }
+    return v;
+}
+
+
     /**
      * Basic parsing functions see showErrorMessage method for flag explanations.
      * Sets paths and booleans for templates.
@@ -127,33 +141,39 @@ public class DocSettings {
      * @param settings flags provided developer on the CLI
      */
     public void parseSettingsFromCLI(String[] settings) {
-        int mandatorySettings = 0;
-        if (settings == null) {
+    
+        if (settings == null || settings.length == 0) {
             showErrorMessage();
             System.exit(255);
+            return;
         }
+
         for (int i = 0; i < settings.length; i++) {
+            if (settings[i] == null) {
+                showErrorMessage("null argument at position " + i);
+                System.exit(255);
+            }
             switch (settings[i].toLowerCase()) {
                 case "--rulesdir":
-                    setRulesetPathDir(settings[i + 1]);
+                    setRulesetPathDir(requireValue(settings, i, "--rulesDir"));
                     i++;
-                    mandatorySettings++;
                     break;
+
                 case "--reportpath":
-                    setReportDirectory(settings[i + 1]);
+                    setReportDirectory(requireValue(settings, i, "--reportPath"));
                     i++;
-                    mandatorySettings++;
                     break;
+
                 case "--ftltemplatespath":
-                    setFTLTemplatesPath(settings[i + 1]);
+                    setFTLTemplatesPath(requireValue(settings, i, "--ftlTemplatesPath"));
                     i++;
-                    mandatorySettings++;
                     break;
+
                 case "--langtemplatespath":
-                    setLangTemplatesPath(settings[i + 1]);
+                    setLangTemplatesPath(requireValue(settings, i, "--langTemplatesPath"));
                     i++;
-                    mandatorySettings++;
                     break;
+
                 case "--booleana":
                     setBooleanA(false);
                     break;
@@ -214,42 +234,79 @@ public class DocSettings {
                     System.exit(255);
             }
         }
-        if (mandatorySettings != 4) {
-            showErrorMessage();
+        // Sven feature: only --reportPath is mandatory now
+        if (reportDirectory == null || reportDirectory.trim().isEmpty()) {
+            showErrorMessage("--reportPath is required");
             System.exit(255);
         }
+
     }
 
     private static void showErrorMessage() {
-        String errorMessage = "An error occurred while trying to parse the CLI arguments.\n"
-                + "The default command for running CogniCryptDOC is: \n" +
-                "java -jar <jar_location_of_CogniCryptDOC> \\\r\n" +
-                " 		--rulesDir <absolute_path_to_CrySL_rules> \\\r\n" +
-                " 		--FTLtemplatesPath <absolute_path_to_ftl_templates> \\\r\n" +
-                " 		--LANGtemplatesPath <absolute_path_to_lang_templates> \\\r\n" +
-                "       --reportPath <absolute_path_to_generate_documentation>\n";
+        String errorMessage =
+            "An error occurred while trying to parse the CLI arguments.\n\n" +
+
+            "Minimal command (recommended):\n" +
+            "  java -jar <CogniCryptDOC.jar> --reportPath <output_dir>\n\n" +
+
+            "Optional overrides (only if you want to override bundled defaults):\n" +
+            "  --rulesDir <path_to_CrySL_rules>\n" +
+            "  --ftlTemplatesPath <path_to_ftl_templates>\n" +
+            "  --langTemplatesPath <path_to_lang_templates>\n\n" +
+
+            "Additional flags:\n" +
+            "  --booleanA <hide state machine graph>\n" +
+            "  --booleanB <hide help>\n" +
+            "  --booleanC <hide dependency trees>\n" +
+            "  --booleanD <hide CrySL rule>\n" +
+            "  --booleanE <turn off graphviz generation>\n" +
+            "  --booleanF <copy CrySL rules into documentation folder>\n" +
+            "  --booleanG <use fully qualified name in state machine graph>\n\n" +
+
+            "LLM flags:\n" +
+            "  --disable-llm-explanations\n" +
+            "  --disable-llm-examples\n" +
+            "  --llm=<on|off|true|false|1|0>\n" +
+            "  --llm-explanations=<on|off|true|false|1|0>\n" +
+            "  --llm-examples=<on|off|true|false|1|0>\n" +
+            "  --llm-backend=<openai|ollama>\n";
+
         System.out.println(errorMessage);
     }
 
+
     private static void showErrorMessage(String arg) {
-        String errorMessage = "An error occurred while trying to parse the CLI argument: " + arg + ".\n"
-                + "The default command for running CogniCryptDOC is: \n" +
-                "java -jar <jar_location_of_CogniCryptDOC> \\\r\n" +
-                " 		--rulesDir <absolute_path_to_CrySL_rules> \\\r\n" +
-                " 		--templatesPath <absolute_path_to_ftl_templates> \\\r\n" +
-                " 		--LANGtemplatesPath <absolute_path_to_lang_templates> \\\r\n" +
-                "       --reportPath <absolute_path_to_generate_documentation>\n"
-                + "\nAdditional arguments that can be used are:\n"
-                + "--booleanA <To hide state machine graph>\n"
-                + "--booleanB <To hide help>\n"
-                + "--booleanC <To hide dependency trees>\n"
-                + "--booleanD <To hide CrySL rule\n"
-                + "--booleanE <To turn of graphviz generation\n"
-                + "--booleanF <To copy CrySL rules into documentation folder>\n" // Relative Paths for FTL templates if
-                                                                                 // distributed
-                + "--booleanG <To turn on fully qualified name in state machine graph>\n";
+        String errorMessage =
+            "An error occurred while trying to parse the CLI argument: " + arg + "\n\n" +
+
+            "Minimal command (recommended):\n" +
+            "  java -jar <CogniCryptDOC.jar> --reportPath <output_dir>\n\n" +
+
+            "Optional overrides (only if you want to override bundled defaults):\n" +
+            "  --rulesDir <path_to_CrySL_rules>\n" +
+            "  --ftlTemplatesPath <path_to_ftl_templates>\n" +
+            "  --langTemplatesPath <path_to_lang_templates>\n\n" +
+
+            "Additional flags:\n" +
+            "  --booleanA <hide state machine graph>\n" +
+            "  --booleanB <hide help>\n" +
+            "  --booleanC <hide dependency trees>\n" +
+            "  --booleanD <hide CrySL rule>\n" +
+            "  --booleanE <turn off graphviz generation>\n" +
+            "  --booleanF <copy CrySL rules into documentation folder>\n" +
+            "  --booleanG <use fully qualified name in state machine graph>\n\n" +
+
+            "LLM flags:\n" +
+            "  --disable-llm-explanations\n" +
+            "  --disable-llm-examples\n" +
+            "  --llm=<on|off|true|false|1|0>\n" +
+            "  --llm-explanations=<on|off|true|false|1|0>\n" +
+            "  --llm-examples=<on|off|true|false|1|0>\n" +
+            "  --llm-backend=<openai|ollama>\n";
+
         System.out.println(errorMessage);
     }
+
 
     public String getLangTemplatesPath() {
         return langTemplatesPath;

@@ -8,13 +8,12 @@ import crypto.exceptions.CryptoAnalysisException;
 import crypto.rules.CrySLPredicate;
 import crypto.rules.CrySLRule;
 import crypto.rules.CrySLRuleReader;
+import de.upb.docgen.crysl.CrySLReader;
 import de.upb.docgen.llm.CrySLToLLMGenerator;
 import de.upb.docgen.utils.*;
 import de.upb.docgen.writer.FreeMarkerWriter;
 import freemarker.template.*;
 import org.apache.commons.io.FileUtils;
-
-import javax.print.Doc;
 
 import static de.upb.docgen.llm.CrySLToLLMGenerator.cleanLLMCodeBlock;
 
@@ -37,8 +36,15 @@ public class DocumentGeneratorMain {
             docSettings.parseSettingsFromCLI(args);
 
             // read CryslRules from absolutePath provided by the user
+            // Sven feature (PR#11/#12): if --rulesDir isn't provided, read CrySL rules from the JAR
             System.out.println("Reading CrySL Rules");
-            List<CrySLRule> rules = ruleReader.readFromDirectory(new File(docSettings.getRulesetPathDir()));
+            List<CrySLRule> rules;
+            if (docSettings.getRulesetPathDir() != null && !docSettings.getRulesetPathDir().trim().isEmpty()) {
+                rules = ruleReader.readFromDirectory(new File(docSettings.getRulesetPathDir()));
+            } else {
+                rules = CrySLReader.readRulesFromJar();
+            }
+
 
             System.out.println("Reading CrySL Rules Done");
             ClassEventForb cef = new ClassEventForb();
@@ -69,18 +75,26 @@ public class DocumentGeneratorMain {
             for (CrySLRule ruleEntry : rules) {
                 ComposedRule composedRule = new ComposedRule();
                 CrySLRule rule = ruleEntry;
-                // CrySL to .txt format
-                String fullClassName = rule.getClassName(); // e.g. "javax.crypto.Cipher"
+                // CrySL to .txt format (supports both: rules from disk OR bundled rules from JAR)
+                String fullClassName = rule.getClassName();
                 String simpleName = fullClassName.substring(fullClassName.lastIndexOf('.') + 1);
-                String relativePath = "src/main/resources/CrySLRules/" + simpleName + ".crysl";
-                File cryslFile = new File(relativePath);
 
-                if (cryslFile.exists()) {
+                File cryslFile;
+                if (docSettings.getRulesetPathDir() != null && !docSettings.getRulesetPathDir().trim().isEmpty()) {
+                    // if user provided --rulesDir, read the .crysl from that directory
+                    cryslFile = new File(docSettings.getRulesetPathDir(), simpleName + ".crysl");
+                } else {
+                    // otherwise read bundled .crysl from the JAR
+                    cryslFile = CrySLReader.readRuleFromJarFile(simpleName);
+                }
+
+                if (cryslFile != null && cryslFile.exists()) {
                     String ruleText = Files.readString(cryslFile.toPath());
                     composedRule.setCryslRuleText("\n" + ruleText);
                 } else {
                     composedRule.setCryslRuleText("// CrySL file not found for: " + simpleName);
                 }
+
 
                 // Overview section
                 String classname = rule.getClassName();
@@ -324,14 +338,29 @@ public class DocumentGeneratorMain {
             // specifify this flag to distribute the documentation
             System.out.println("CogniCryptDOC generated to: " + DocSettings.getInstance().getReportDirectory());
             if (!docSettings.isBooleanF()) {
-                File source = new File(docSettings.getRulesetPathDir());
                 File dest = new File(docSettings.getReportDirectory() + File.separator + "rules");
-                try {
+                Files.createDirectories(dest.toPath());
+
+                if (docSettings.getRulesetPathDir() != null && !docSettings.getRulesetPathDir().trim().isEmpty()) {
+                    // user override: copy rules from the provided folder
+                    File source = new File(docSettings.getRulesetPathDir());
                     FileUtils.copyDirectory(source, dest);
-                } catch (IOException e) {
-                    e.printStackTrace();
+                } else {
+                    // bundled mode: copy each rule file from the JAR into the report folder
+                    for (CrySLRule rule : cryslRuleList) {
+                        String fullClassName = rule.getClassName();
+                        String simpleName = fullClassName.substring(fullClassName.lastIndexOf('.') + 1);
+
+                        File ruleFile = CrySLReader.readRuleFromJarFile(simpleName);
+                        if (ruleFile != null && ruleFile.exists()) {
+                            File target = new File(dest, simpleName + ".crysl");
+                            FileUtils.copyFile(ruleFile, target);
+                        }
+
+                    }
                 }
             }
+
         } finally {
             long end = System.nanoTime();
             double elapsedMs = (end - start) / 1_000_000.0;

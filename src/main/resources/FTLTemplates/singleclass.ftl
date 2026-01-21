@@ -8,7 +8,42 @@
         * {
             font-family: "Source Sans Pro", "Helvetica Neue", Arial, sans-serif;
         }
+        .toggle-icon {
+            cursor: pointer;
+            user-select: none;
+            display: inline-block;
+            min-width: 18px;
+            text-align: center;
 
+            /* override .tree span { margin: 0 .2em .5em; } */
+            margin: 0 6px 0 0 !important;
+
+            /* prevent it from looking like a node-box */
+            border: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            position: static !important;
+
+            vertical-align: middle;
+            line-height: 1;
+        }
+
+        /* keep alignment for leaf nodes (empty toggle icon) */
+        .toggle-icon:empty {
+            visibility: hidden;
+        }
+
+        /* kill the connector "stem" coming from .tree span:before */
+        .toggle-icon:before {
+            content: none !important;
+            display: none !important;
+        }
+
+        .tree-node a {
+            text-decoration: none;
+            color: inherit;
+        }
         .tree,
         .tree ul,
         .tree li {
@@ -443,22 +478,32 @@
             </p>
         </div>
         <div class="fortree">
-            <ul class="tree">
-                <#macro reqTree treenode>
-                    <li>
-                        <span> <a href="${treenode.data}.html">${treenode.data}</a></span>
-                        <#if treenode.children?has_content>
-                            <ul>
-                                <#list treenode.children as child>
-                                    <@reqTree child />
-                                </#list>
-                            </ul>
-                        </#if>
-                    </li>
-                </#macro>
-                <@reqTree requires />
-            </ul>
-        </div>
+        <ul class="tree">
+            <#macro reqTree treenode>
+                <li>
+                    <#if treenode.children?has_content>
+                        <span class="toggle-icon" onclick="toggleNode(this)">+</span>
+                    <#else>
+                        <span class="toggle-icon"></span>
+                    </#if>
+
+                    <span class="tree-node">
+                        <a href="${treenode.data}.html">${treenode.data}</a>
+                    </span>
+
+                    <#if treenode.children?has_content>
+                        <ul style="display:none;">
+                            <#list treenode.children as child>
+                                <@reqTree child />
+                            </#list>
+                        </ul>
+                    </#if>
+                </li>
+            </#macro>
+
+            <@reqTree requires />
+        </ul>
+    </div>
     </div>
     <button class="collapsible">Ensures Tree</button>
     <div class="content">
@@ -477,9 +522,18 @@
             <ul class="tree">
                 <#macro ensTree treenode>
                     <li>
-                        <span> <a href="${treenode.data}.html">${treenode.data}</a> </span>
                         <#if treenode.children?has_content>
-                            <ul>
+                            <span class="toggle-icon" onclick="toggleNode(this)">+</span>
+                        <#else>
+                            <span class="toggle-icon"></span>
+                        </#if>
+
+                        <span class="tree-node">
+                            <a href="${treenode.data}.html">${treenode.data}</a>
+                        </span>
+
+                        <#if treenode.children?has_content>
+                            <ul style="display:none;">
                                 <#list treenode.children as child>
                                     <@ensTree child />
                                 </#list>
@@ -487,6 +541,7 @@
                         </#if>
                     </li>
                 </#macro>
+
                 <@ensTree ensures />
             </ul>
         </div>
@@ -745,6 +800,31 @@
     }
     toggleAllBtn.click();
     coll[0].click();
+
+    function toggleNode(element) {
+        // element is the +/- span inside the <li>
+        var li = element.parentElement;
+        if (!li) return;
+
+        // Find direct child <ul> (the subtree)
+        var childUl = null;
+        for (var j = 0; j < li.children.length; j++) {
+            var el = li.children[j];
+            if (el.tagName && el.tagName.toLowerCase() === "ul") {
+                childUl = el;
+                break;
+            }
+        }
+        if (!childUl) return;
+
+        if (childUl.style.display === "none") {
+            childUl.style.display = "";   // revert to CSS default (your .tree ul uses display: table)
+            element.textContent = "−";
+        } else {
+            childUl.style.display = "none";
+            element.textContent = "+";
+        }
+    }
 
     function toggleAl() {
         var btn = document.getElementById("toggleAl");
