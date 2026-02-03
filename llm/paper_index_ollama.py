@@ -14,18 +14,23 @@ from requests.exceptions import RequestException, HTTPError
 
 @dataclass
 class DocChunk:
+    # Stable ID for RAG references (e.g., "C12")
     id: str
+    # Text content of the chunk
     text: str
 
 class EmbeddingIndex:
     def __init__(self):
+        # Parallel arrays of IDs and FAISS vectors
         self.ids: List[str] = []
         self.index = None
         self.vectors = None  # np.ndarray float32
 
     def build(self, embeddings: np.ndarray, ids: List[str]):
+        """Build a cosine-similarity FAISS index from embeddings and IDs."""
         if embeddings.dtype != np.float32:
             embeddings = embeddings.astype("float32")
+        # Normalize for cosine similarity using inner product index
         faiss.normalize_L2(embeddings)
         dim = embeddings.shape[1]
         self.index = faiss.IndexFlatIP(dim)
@@ -34,11 +39,13 @@ class EmbeddingIndex:
         self.ids = ids
 
     def search(self, vec: np.ndarray, k: int) -> List[Tuple[str, float]]:
+        """Return top-k (id, score) pairs for a query embedding."""
         q = vec.astype("float32")
         faiss.normalize_L2(q)
         D, I = self.index.search(q.reshape(1, -1), k)
         return [(self.ids[i], float(D[0][j])) for j, i in enumerate(I[0]) if i != -1]
 
+# Extract text from all pages of a PDF (best effort).
 def _extract_pdf_text(pdf_path: str) -> str:
     reader = PdfReader(pdf_path)
     pages = []
@@ -49,6 +56,7 @@ def _extract_pdf_text(pdf_path: str) -> str:
             pages.append("")
     return "\n".join(pages)
 
+# Chunk text by paragraph with overlap to preserve context.
 def _chunk_text(text: str, max_chars=1800, overlap=300) -> List[str]:
     paragraphs = [p.strip() for p in text.split("\n") if p.strip()]
     chunks, buf = [], ""
@@ -62,6 +70,7 @@ def _chunk_text(text: str, max_chars=1800, overlap=300) -> List[str]:
     if buf:
         chunks.append(buf)
     merged = []
+    # Add overlap from previous chunk to improve retrieval continuity.
     for c in chunks:
         if not merged:
             merged.append(c)
@@ -121,7 +130,9 @@ class OllamaClient:
         def create(model: str, prompt: str, max_tokens: int = 512, temperature: float = 0.2):
             raise NotImplementedError()
 
+# Create a lightweight Ollama client instance with embeddings/chat bindings.
 def _make_ollama_client():
+    """Create an Ollama client with bound embeddings and chat/generate helpers."""
     client = OllamaClient()
     # bind functional implementations that use the instance base_url
     def embeddings_create(model: str, prompt: str):
@@ -143,6 +154,7 @@ def _make_ollama_client():
     client.generate = types.SimpleNamespace(create=generate_create)
     return client
 
+# Embed a list of texts by calling Ollama's embeddings endpoint.
 def _embed_texts(client: OllamaClient, texts: List[str], model="mistral:v0.3") -> np.ndarray:
     """
     Embed a list of texts by calling /ollama/api/embeddings once per text.
@@ -177,12 +189,14 @@ def _embed_texts(client: OllamaClient, texts: List[str], model="mistral:v0.3") -
 
     return np.asarray(vectors, dtype="float32")
 
-
+# Build (or load) a cached FAISS index over the CrySL paper PDF using Ollama embeddings.
 def build_pdf_index(pdf_path: str, cache_dir="rag_cache", emb_model="mistral:v0.3"):
+    """Load cached FAISS artifacts if present, otherwise build them from the PDF."""
     os.makedirs(cache_dir, exist_ok=True)
     vec_p = Path(cache_dir) / "vectors.npy"
     ids_p = Path(cache_dir) / "ids.json"
     chunks_p = Path(cache_dir) / "chunks.json"
+    # Reuse cached index if present.
     if vec_p.exists() and ids_p.exists() and chunks_p.exists():
         vectors = np.load(vec_p)
         ids = json.loads(ids_p.read_text(encoding="utf-8"))
@@ -193,6 +207,7 @@ def build_pdf_index(pdf_path: str, cache_dir="rag_cache", emb_model="mistral:v0.
         return idx, chunks
 
     client = _make_ollama_client()
+    # Extract PDF text, chunk it, embed, and build the index.
     raw_text = _extract_pdf_text(pdf_path)
     raw_chunks = _chunk_text(raw_text)
     chunks = [DocChunk(id=f"C{i}", text=t) for i, t in enumerate(raw_chunks)]
@@ -205,6 +220,7 @@ def build_pdf_index(pdf_path: str, cache_dir="rag_cache", emb_model="mistral:v0.
     chunks_p.write_text(json.dumps([c.__dict__ for c in chunks]), encoding="utf-8")
     return idx, chunks
 
-# expose helper for other modules
+# Expose helper for other modules to obtain an Ollama client.
 def get_ollama_client():
+    """Return a ready-to-use Ollama client with embeddings/generate helpers."""
     return _make_ollama_client()

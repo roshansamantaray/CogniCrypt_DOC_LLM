@@ -37,6 +37,9 @@ public class Order {
 	public static PrintWriter out;
 
 	// reading the file and adding it to map(k,v), k- event , v- content inside it
+	/**
+	 * Read a CrySL file into a map of clause name -> lines.
+	 */
 	private static Map<String, List<String>> readCryslFile(String filePath) throws IOException {
 		Map<String, List<String>> cryslFileContentMap = new LinkedHashMap<>();
 		String contentCategory = null;
@@ -64,6 +67,9 @@ public class Order {
 		return cryslFileContentMap;// contains the sections with their details
 	}
 
+	/**
+	 * Load symbol mappings from Templates/symbol.properties (disk override or JAR fallback).
+	 */
 	private static Map<String, String> getSymValues() throws IOException {
 		Properties properties = new Properties();
 
@@ -101,6 +107,9 @@ public class Order {
 
 
 
+	/**
+	 * Parse EVENT definitions into a list of Event objects and cache a label -> method map.
+	 */
 	private static List<Event> processEvents(List<String> lines) {
 		List<Event> eventList = new ArrayList<>();
 		Map<String, String> methodIdentifiersmap = new LinkedHashMap<>();
@@ -328,6 +337,9 @@ public class Order {
 		return eventList;
 	}
 
+	/**
+	 * Cache a processed label -> method string for quick lookup.
+	 */
 	private static void getProcessedMap(List<Event> eventList) {
 		eventList.forEach(event -> {
 			processedresultMap.put(event.getEvent(), event.getMethodIdentifierMap());
@@ -335,6 +347,10 @@ public class Order {
 	}
 
 
+	/**
+	 * Build the natural-language ORDER description for a CrySL rule.
+	 * Reads the rule file, resolves symbols, and renders order sentences.
+	 */
 	public List<String> runOrder(CrySLRule file) throws IOException, CryptoAnalysisException {
 
 		if (file == null) {
@@ -347,7 +363,7 @@ public class Order {
 			String simpleName = file.getClassName().substring(file.getClassName().lastIndexOf(".") + 1);
 			String rulesDir = DocSettings.getInstance().getRulesetPathDir();
 
-			// Sven feature: if --rulesDir isn't provided, read the CrySL rule from bundled JAR resources
+			// if --rulesDir isn't provided, read the CrySL rule from bundled JAR resources
 			if (rulesDir != null && !rulesDir.trim().isEmpty()) {
 				String filePath = rulesDir + File.separator + simpleName + ".crysl";
 				fileContent = readCryslFile(filePath);
@@ -404,6 +420,9 @@ public class Order {
 		}
 	}
 
+	/**
+	 * Replace aggregate labels with the resolved method names.
+	 */
 	private List<String> aggrgatesToMethods(ArrayList<String> allNLsentences) {
 		List<String> n = new ArrayList<>();
 		for (String ff : allNLsentences) {
@@ -423,6 +442,9 @@ public class Order {
 		return n;
 	}
 
+	/**
+	 * Combine sentences and apply indentation based on parentheses/alternatives.
+	 */
 	private List<String> combineAndIndentation(List<String> n) {
 		List<String> fo = new ArrayList<>();
 		String a = "";
@@ -477,6 +499,9 @@ public class Order {
 		return fo;
 	}
 
+	/**
+	 * Convert the ORDER clause to natural-language tokens using symbol mappings.
+	 */
 	private ArrayList<String> parseOrderToNL(List<String> test) {
 		ArrayList<String> fl = new ArrayList<>();
 		boolean added = false;
@@ -523,6 +548,9 @@ public class Order {
 		return fl;
 	}
 
+	/**
+	 * Decide the call frequency text for a bracketed group (e.g., *, +, ?).
+	 */
 	private String decideSymbolOfBracket(String decided, int toIgnore) {
 		int totalCounter = 0;
 		boolean breakof = false;
@@ -568,6 +596,9 @@ public class Order {
 		return decided;
 	}
 
+	/**
+	 * Merge tokens inside matching parentheses into a single token string.
+	 */
 	private List<String> connectBrackets(List<String> fo) {
 		StringBuilder sb = new StringBuilder();
 		List<String> connected = new ArrayList<>();
@@ -604,18 +635,30 @@ class Event {
 	public String event;
 	public Map<String, String> methodIdentifierMap = new HashMap<>();
 
+	/**
+	 * Create an event with the given label.
+	 */
 	public Event(String event) {
 		this.event = event;
 	}
 
+	/**
+	 * Add a label -> method mapping for this event.
+	 */
 	public void addIdentifierAndMethod(String id, String method) {
 		methodIdentifierMap.put(id, method);
 	}
 
+	/**
+	 * Return the event label.
+	 */
 	public String getEvent() {
 		return event;
 	}
 
+	/**
+	 * Return a display string for the event's method identifiers.
+	 */
 	public String getMethodIdentifierMap() {
 		return methodIdentifierMap.values().toString().replaceAll(",(?=[^\\)]*(?:\\(|$))", " or")
 				.replaceFirst("[\\[\\]]", "").replaceFirst("\\]$", "");

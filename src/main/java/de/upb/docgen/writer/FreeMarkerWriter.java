@@ -32,6 +32,7 @@ public class FreeMarkerWriter {
     public static void createSidebar(List<ComposedRule> composedRuleList, Configuration cfg ) throws IOException, TemplateException {
         Map<String, Object> input = new HashMap<String, Object>();
         input.put("title", "Sidebar");
+        // Sort entries for stable navigation ordering.
         Collections.sort(composedRuleList, new Comparator<ComposedRule>() {
             @Override
             public int compare(ComposedRule o1, ComposedRule o2) {
@@ -42,6 +43,7 @@ public class FreeMarkerWriter {
         Template template;
         String ftlDir = DocSettings.getInstance().getFtlTemplatesPath();
 
+        // Load templates from explicit path if provided, otherwise from bundled JAR.
         if (ftlDir != null && !ftlDir.trim().isEmpty()) {
             template = cfg.getTemplate(Utils.pathForTemplates(new File(ftlDir, "sidebar.ftl").toURI().toString()));
         } else {
@@ -49,7 +51,7 @@ public class FreeMarkerWriter {
             template = cfg.getTemplate(Utils.pathForTemplates(file.toURI().toString()));
         }
 
-        // 2.3. Generate the output
+        // Write the rendered sidebar HTML.
         File out = new File(new File(DocSettings.getInstance().getReportDirectory()), "navbar.html");
 
         try (Writer fileWriter = new FileWriter(out)) {
@@ -81,11 +83,13 @@ public class FreeMarkerWriter {
             input.put("title", "class");
             input.put("rule", rule);
 //            Map<String, String> llmExplanation = rule.getLlmExplanation();
+            // LLM explanations passed explicitly for the template to render.
             input.put("englishExplanation",rule.getLlmExplanation().get("English"));
             input.put("frenchExplanation",rule.getLlmExplanation().get("French"));
             input.put("portugueseExplanation",rule.getLlmExplanation().get("Portuguese"));
             input.put("germanExplanation",rule.getLlmExplanation().get("German"));
 
+            // LLM code examples for secure/insecure usage.
             input.put("secureExample", rule.getSecureExample());
             input.put("insecureExample", rule.getInsecureExample());
             TreeNode<String> rootReq = reqToEns.get(rule.getComposedClassName());
@@ -93,14 +97,13 @@ public class FreeMarkerWriter {
             TreeNode<String> rootEns = ensToReq.get(rule.getComposedClassName());
             input.put("ensures", rootEns); // ensures tree parsed by the template
 
-            // necessary input for the template to load absolute path from crysl rule which can be displayed
+            // Provide a base path for rule file lookups if running from an external ruleset.
             String rulesDir = DocSettings.getInstance().getRulesetPathDir();
             if (rulesDir != null && !rulesDir.trim().isEmpty()) {
                 File rulesDirFile = new File(rulesDir);
                 input.put("pathToRules", Utils.pathForTemplates(rulesDirFile.toURI().toString()));
             } else {
-                // In default-from-JAR mode, templates should rely on rule.getCryslRuleText()
-                // If your template still reads files from pathToRules, we need a temp extracted rules dir instead.
+                // In default-from-JAR mode, templates should rely on rule.getCryslRuleText().
                 input.put("pathToRules", "");
             }
             // Set flags
@@ -111,12 +114,14 @@ public class FreeMarkerWriter {
             input.put("booleanE", e);
             input.put("booleanF", f);
 
+            // Render the state machine to Graphviz DOT for client-side visualization.
             input.put("stateMachine", StateMachineToGraphviz.toGraphviz(crySLRules.get(i).getUsagePattern()));
 
             // 2.2. Get the template
             Template template;
             String ftlDir = DocSettings.getInstance().getFtlTemplatesPath();
 
+            // Load templates from explicit path if provided, otherwise from bundled JAR.
             if (ftlDir != null && !ftlDir.trim().isEmpty()) {
                 template = cfg.getTemplate(Utils.pathForTemplates(new File(ftlDir, "singleclass.ftl").toURI().toString()));
             } else {
@@ -169,6 +174,7 @@ public class FreeMarkerWriter {
         Template rootpageTemplate;
         Template cryslTemplate;
 
+        // Load templates from explicit path if provided, otherwise from bundled JAR.
         if (ftlDir != null && !ftlDir.trim().isEmpty()) {
             frontpageTemplate = cfg.getTemplate(
                     Utils.pathForTemplates(new File(ftlDir, "frontpage.ftl").toURI().toString())
@@ -189,6 +195,7 @@ public class FreeMarkerWriter {
             cryslTemplate     = cfg.getTemplate(Utils.pathForTemplates(crysl.toURI().toString()));
         }
 
+        // Render core layout pages into the report directory.
         try (Writer fileWriter = new FileWriter(new File(
                 DocSettings.getInstance().getReportDirectory() + File.separator + "frontpage.html"
         ))) {

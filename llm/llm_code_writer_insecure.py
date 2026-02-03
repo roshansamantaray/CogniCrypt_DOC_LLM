@@ -9,8 +9,10 @@ from openai import OpenAI
     @author: Roshan Samantaray
 """
 
+# Load environment variables for API access.
 load_dotenv()
 
+# Build a prompt that instructs the LLM to violate the CrySL rule intentionally.
 def build_insecure_prompt (rule: dict) -> str:
     return f'''
     You are a Java coding assistant.
@@ -42,13 +44,14 @@ def build_insecure_prompt (rule: dict) -> str:
     Your goal is to help demonstrate **what insecure code might look like** to compare with a secure version.
     '''.strip()
 
+# CLI entrypoint: load rule JSON, build prompt, call LLM, print Java.
 def main():
     # Load rule JSON from Java
     json_file_path = sys.argv[1]
     with open(json_file_path, 'r', encoding='utf-8') as f:
         rule = json.load(f)
 
-    # Decide secure or insecure
+    # Decide secure or insecure (this script expects insecure by default)
     example_type = rule.get("exampleType", "insecure").lower()
     label = "insecure" if "insecure" in example_type else "secure"
 
@@ -70,5 +73,6 @@ def main():
     # Output generated Java code
     print(response.choices[0].message.content)
 
+# Standard entry guard for CLI usage.
 if __name__=="__main__":
     main()

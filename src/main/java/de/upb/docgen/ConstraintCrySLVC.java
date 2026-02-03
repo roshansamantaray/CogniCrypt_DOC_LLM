@@ -28,16 +28,27 @@ public class ConstraintCrySLVC {
 
 	static PrintWriter out;
 
+	/**
+	 * Load the template for the left-hand side (LHS) of VC implication.
+	 */
 	private static String getTemplateVCLHS() throws IOException {
 		return Utils.getTemplatesTextString("ConstraintCrySLVCClauseLHS");
 
 	}
 
+	/**
+	 * Load the template for the right-hand side (RHS) of VC implication.
+	 */
 	private static String getTemplateVCRHS() throws IOException {
 		return Utils.getTemplatesTextString("ConstraintCrySLVCClauseRHS");
 
 	}
 
+	/**
+	 * Build formatted VC implication constraints for a rule.
+	 * Parses CrySLConstraint entries that start with VC and renders
+	 * LHS and RHS sentences with parameter positions and method names.
+	 */
 	public ArrayList<String> getConCryslVC(CrySLRule rule) throws IOException {
 		ArrayList<String> composedConsraintsValueConstraints = new ArrayList<>();
 		List<ISLConstraint> constraintConList = rule.getConstraints().stream()
@@ -57,12 +68,14 @@ public class ConstraintCrySLVC {
 
 				if (conCryslStr.startsWith("VC")) {
 
+					// Map parameter names to their resolved Java types.
 					List<Entry<String, String>> dataTypes = rule.getObjects();
 					Map<String, String> DTMap = new LinkedHashMap<>();
 					for (Entry<String, String> dt : dataTypes) {
 						DTMap.put(dt.getKey(), FunctionUtils.getDataType(rule, dt.getKey()));
 					}
 
+					// Split into LHS/RHS using "implies" and "and".
 					List<String> impSplitList = Arrays.asList(conCryslStr.split("implies"));
 					List<String> LHSList = Arrays.asList(impSplitList.get(0).split("and"));
 					List<String> RHSList = Arrays.asList(impSplitList.get(1));
@@ -89,6 +102,7 @@ public class ConstraintCrySLVC {
 					// CrySLValueConstraint rightParam = (CrySLValueConstraint)
 					// crySLConstraint.getRight();
 
+					// Expand var name + allowed values for each side.
 					List<String> realLeft = new ArrayList<>();
 					realLeft.add(leftParam.getVarName());
 					for (String s : leftParam.getValueRange()) {
@@ -110,6 +124,7 @@ public class ConstraintCrySLVC {
 					String resultmainstringLHS = "";
 					String resultmainstringRHS = "";
 
+					// Render LHS clauses (supports chained "and").
 					for (int i = 0; i <= LHSList.size() - 1; i++) {
 
 						if (i < 1) {
@@ -262,6 +277,7 @@ public class ConstraintCrySLVC {
 
 					String b = templatestringRHS;
 
+					// Render RHS clause(s).
 					for (String RHSStr : RHSList) {
 
 						List<String> finalpredmethodRHSList = new ArrayList<>();

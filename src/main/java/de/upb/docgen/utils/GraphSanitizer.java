@@ -3,8 +3,15 @@ package de.upb.docgen.utils;
 import java.util.*;
 
 public final class GraphSanitizer {
+    /**
+     * Utility class: prevent instantiation.
+     */
     private GraphSanitizer() {}
 
+    /**
+     * Normalize the dependency graph for a start node by removing self-loops,
+     * restricting to reachable nodes, and collapsing SCCs for stable ordering.
+     */
     public static Map<String, Set<String>> sanitize(Map<String, Set<String>> consumerToProviders,
                                                     Map<String, Set<String>> reverse,
                                                     String start) {
@@ -127,6 +134,9 @@ public final class GraphSanitizer {
         return expanded;
     }
 
+    /**
+     * Compute strongly connected components (SCCs) using Tarjan's algorithm.
+     */
     private static List<Set<String>> tarjanSCC(Map<String, Set<String>> g, Set<String> nodes) {
         Map<String, Integer> idx = new HashMap<>();
         Map<String, Integer> low = new HashMap<>();
@@ -143,6 +153,9 @@ public final class GraphSanitizer {
         return sccs;
     }
 
+    /**
+     * Depth-first search step for Tarjan's SCC algorithm.
+     */
     private static void dfs(String v,
                             Map<String, Set<String>> g,
                             Map<String, Integer> idx,

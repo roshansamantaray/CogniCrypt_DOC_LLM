@@ -29,10 +29,12 @@ FILENAME_TEMPLATE = "sanitized_rule_{fqcn}_{lang}.json"
 SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
 PDF_PATH = PROJECT_ROOT / "tse19CrySL.pdf"
 
+# Build the sanitized rule file path for a class/language pair.
 def rule_path(fqcn: str, lang: str) -> Path:
     sanitized_name =  SANITIZED_DIR / FILENAME_TEMPLATE.format(fqcn=fqcn, lang=lang)
     return sanitized_name
 
+# Read a JSON file with utf-8 and return dict or None.
 def load_json(path: Path):
     try:
         with path.open(encoding="utf-8") as f:
@@ -43,6 +45,7 @@ def load_json(path: Path):
         print(f"[ERROR] Could not read {path}: {e}", file=sys.stderr)
     return None
 
+# Normalize list items for display.
 def clean_item(s):
     if not isinstance(s, str):
         return str(s)
@@ -51,6 +54,7 @@ def clean_item(s):
         s2 = s2.lstrip(",").strip()
     return s2
 
+# Load dependency constraints for direct dependencies of the target rule.
 def collect_dependency_constraints(target_fqcn: str, language: str) -> Tuple[List[str], Dict[str, List[str]]]:
     dep_to_constraints : Dict[str, List[str]] = {}
     deps_order: List[str] = []
@@ -85,6 +89,7 @@ def collect_dependency_constraints(target_fqcn: str, language: str) -> Tuple[Lis
 
     return deps_order, dep_to_constraints
 
+# Render dependency constraints into a readable block for the prompt.
 def format_dependency_constraints(deps_order: List[str], dep_to_constraints: Dict[str, List[str]]) -> str:
     if not deps_order:
         return "No dependency constraints supplied."
@@ -98,6 +103,7 @@ def format_dependency_constraints(deps_order: List[str], dep_to_constraints: Dic
             parts.append(f"Dependency: {dep}\n{lines}")
     return "\n\n".join(parts)
 
+# Normalize inputs that can be list-or-string into a list of strings.
 def _normalize_listish(value) -> List[str]:
     if value is None:
         return []
@@ -108,6 +114,7 @@ def _normalize_listish(value) -> List[str]:
         return [v] if v else []
     return [clean_item(value)]
 
+# Collect ENSURES from dependency rules (depth-limited, cycle-safe).
 def collect_dependency_ensures(primary_fqcn: str, language: str, depth: int = 1) -> Tuple[List[str], Dict[str, List[str]]]:
     """Return (deps_order, dep_to_ensures) where dep_to_ensures maps fqcn -> list[str].
     depth=1 means direct dependencies only. Cycle-safe.
@@ -147,6 +154,7 @@ def collect_dependency_ensures(primary_fqcn: str, language: str, depth: int = 1)
 
     return deps_order, dep_to_ensures
 
+# Render dependency ENSURES in a readable, developer-friendly block.
 def format_dependency_ensures(primary_fqcn: str, deps_order: List[str], dep_to_ensures: Dict[str, List[str]]) -> str:
     if not deps_order:
         return f"No dependent component guarantees were available for {primary_fqcn}."
@@ -165,6 +173,7 @@ def format_dependency_ensures(primary_fqcn: str, deps_order: List[str], dep_to_e
         lines.extend([f"  - {e}" for e in ensures])
     return "\n".join(lines)
 
+# Split raw CrySL text into a dict of section -> lines.
 def crysl_to_json_lines(crysl_text: str) -> Dict[str, List[str]]:
     sections = [
         "SPEC",
@@ -188,17 +197,20 @@ def crysl_to_json_lines(crysl_text: str) -> Dict[str, List[str]]:
         out[header] = lines
     return out
 
+# Remove stray code fences from LLM output while keeping markdown headings.
 def clean_llm_output(text: str) -> str:
     # Keep Markdown headings; just strip stray code fences
     text = re.sub(r"^```(?:\w+)?\s*$", "", text, flags=re.MULTILINE)
     text = re.sub(r"^```\s*$", "", text, flags=re.MULTILINE)
     return text.strip()
 
+# Convert a list-or-string section into displayable text.
 def lines_to_text(section) -> str:
     if isinstance(section, list):
         return "\n".join(section) if section else "_no entries_"
     return str(section) if section else "_no entries_"
 
+# Ensure all expected rule fields exist and fill defaults where missing.
 def validate_and_fill(rule: dict, language: str) -> dict:
     defaults = {
         "SPEC": "",
@@ -216,6 +228,7 @@ def validate_and_fill(rule: dict, language: str) -> dict:
             rule[key] = default
     return rule
 
+# Format sanitized rule fields into a readable prompt block.
 def format_sanitized_rule_for_prompt(sanitized: dict) -> str:
     if not sanitized:
         return "No sanitized fields supplied."
@@ -239,6 +252,7 @@ def format_sanitized_rule_for_prompt(sanitized: dict) -> str:
             parts.append(f"{k}: {clean_item(val)}")
     return "\n\n".join(parts) if parts else "No sanitized fields supplied."
 
+# Embed text using Ollama embeddings and return a float32 matrix.
 def _embed_texts(client, texts: List[str], model: str = "mistral:v0.3") -> np.ndarray:
     """
     Use the Ollama client's embeddings.create to embed a list of texts.
@@ -268,6 +282,7 @@ def _embed_texts(client, texts: List[str], model: str = "mistral:v0.3") -> np.nd
     return np.asarray(vectors, dtype="float32")
 
 
+# Generate text with Ollama and normalize common response shapes.
 def _generate_text(client, model: str, prompt: str, max_tokens: int = 1500, temperature: float = 0.2) -> str:
     """
     Call Ollama generate and try to extract text robustly.
@@ -291,6 +306,7 @@ def _generate_text(client, model: str, prompt: str, max_tokens: int = 1500, temp
     # fallback: stringify
     return str(resp)
 
+# Build RAG context using the CrySL paper index and this rule's sections.
 def make_rag_context(
         client,
         idx,                   # from paper_index_ollama.build_pdf_index
@@ -342,6 +358,7 @@ def make_rag_context(
     rag_sources_block = " ".join(rag_ids)
     return rag_block, rag_sources_block
 
+# Build the LLM prompt and request a structured explanation.
 def generate_explanation(
         client,
         model: str,
@@ -361,6 +378,7 @@ def generate_explanation(
         rag_block: str = "",
         rag_sources: str = "",
 ) -> str:
+    # Prompt assembly: inject rule sections, dependency context, and strict output rules.
     prompt = fr"""
 You are a cryptography expert who explains complex CrySL rules to Java developers in clear, natural language.
 
@@ -486,8 +504,7 @@ WRITING STYLE GUIDELINES:
 Remember: Your audience is Java developers who need to use this cryptographic class correctly but may not be security experts. Every explanation should help them understand not just WHAT to do, but WHY it matters for security.
 
 The goal is to produce documentation that a developer can read like a tutorial, not a reference manual. They should understand how to use the class correctly without ever seeing CrySL syntax or formal notation.
-Respond in **{explanation_language}** and be as precise as possible.\
-Make sure that the response is in **utf-8** charset only.
+Respond in **{explanation_language}** and be as precise as possible.
 """
     sys_msgs = [
         {
@@ -510,7 +527,9 @@ Make sure that the response is in **utf-8** charset only.
     # call Ollama-style generate wrapper
     return _generate_text(client, model, "\n\n".join([m["content"] for m in sys_msgs]) + "\n\n" + prompt, max_tokens=1600, temperature=0.2)
 
+# Orchestrate a single rule's explanation generation pipeline.
 def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn: str, idx=None, chunks=None, k: int = 6, emb_model: str = "mistral:v0.3"):
+    # Load raw CrySL text from disk and normalize into sectioned data.
     try:
         with open(crysl_path, "r", encoding="utf-8") as f:
             content = f.read()
@@ -518,6 +537,7 @@ def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn
         print(f"Error loading CrySL from {crysl_path}: {e}", file=sys.stderr)
         return
 
+    # Derive class name and build human-readable sections for prompting.
     crysl_data = crysl_to_json_lines(content)
     rule = validate_and_fill(crysl_data, language)
 
@@ -552,7 +572,7 @@ def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn
         else "No sanitized fields supplied."
     )
 
-    # (Optional) RAG context from the CrySL paper
+    # Optional RAG context from the CrySL paper (if index is available).
     rag_block = ""
     rag_sources = ""
     if idx is not None and chunks is not None and hasattr(idx, "index"):
@@ -570,6 +590,7 @@ def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn
         )
 
 
+    # Call the LLM and return cleaned text.
     try:
         raw_out = generate_explanation(
             client=client,
@@ -598,6 +619,7 @@ def process_rule(crysl_path: str, language: str, client, model: str, target_fqcn
     print(cleaned)
     return cleaned
 
+# CLI entrypoint: parse args, init Ollama client, optional RAG index, and run.
 def main():
     parser = argparse.ArgumentParser(
         description=(
@@ -648,6 +670,7 @@ def main():
         print(f"{crysl_filename} not found in {RULES_DIR}.", file=sys.stderr)
         return
 
+    # Initialize Ollama client and (optionally) build/load the PDF index.
     load_dotenv()
     client = get_ollama_client()
     idx = None
@@ -659,6 +682,8 @@ def main():
             print(f"[INFO] Skipping RAG: PDF not found at {args.pdf}", file=sys.stderr)
     except Exception as e:
         print(f"[WARN] RAG disabled (index build/load failed): {e}", file=sys.stderr)
+
+    # Execute the pipeline for the requested class/language.
     process_rule(
         str(crysl_full_path),
         language,
@@ -671,5 +696,6 @@ def main():
         emb_model=args.emb_model,
     )
 
+# Standard entry guard for CLI usage.
 if __name__ == "__main__":
     main()

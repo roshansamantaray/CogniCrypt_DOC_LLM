@@ -15,9 +15,14 @@ import crypto.rules.CrySLPredicate;
 
 public class CrySLToLLMGenerator {
 
+    // Supported natural-language outputs for LLM explanations.
     private static final List<String> LANGUAGES = List.of("English", "Portuguese", "German", "French");
 
+    /**
+     * Build structured CrySL data and request multilingual explanations from the LLM.
+     */
     public static void generateExplanations(List<ComposedRule> composedRuleList, List<CrySLRule> cryslRuleList, String backend) {
+        // Iterate rule-by-rule to build structured inputs for the LLM.
         for (int i = 0; i < composedRuleList.size(); i++) {
             ComposedRule composedRule = composedRuleList.get(i);
             CrySLRule cryslRule = cryslRuleList.get(i);
@@ -115,7 +120,7 @@ public class CrySLToLLMGenerator {
             List<String> forbidden = composedRule.getForbiddenMethods();
             cryslData.put("forbidden", forbidden != null ? String.join(", ", forbidden) : "N/A");
 
-            // Call LLMService
+            // Call LLMService for multilingual explanations.
             try {
                 Map<String, String> explanation = LLMService.getLLMExplanation(cryslData, LANGUAGES, backend);
                 composedRule.setLlmExplanation(explanation);
@@ -127,7 +132,11 @@ public class CrySLToLLMGenerator {
         }
     }
 
+    /**
+     * Build structured CrySL data and request secure/insecure example code.
+     */
     public static void generateExample (List<ComposedRule> composedRuleList, List<CrySLRule> crySLRuleList) {
+        // Build a compact rule summary and request both secure and insecure examples.
         for (int i = 0; i < composedRuleList.size(); i++) {
             ComposedRule composedRule = composedRuleList.get(i);
             CrySLRule cryslRule = crySLRuleList.get(i);
@@ -209,6 +218,7 @@ public class CrySLToLLMGenerator {
             cryslData.put("forbidden", forbidden != null ? String.join(", ", forbidden) : "N/A");
 
             try {
+                // One call per example type (secure/insecure).
                 String secure = LLMService.getLLMExample(new HashMap<>(cryslData), "secure");
                 String insecure = LLMService.getLLMExample(new HashMap<>(cryslData), "insecure");
 
@@ -222,6 +232,9 @@ public class CrySLToLLMGenerator {
         }
     }
 
+    /**
+     * Extract a fenced Java code block from LLM output, or strip fences as a fallback.
+     */
     public static String cleanLLMCodeBlock(String rawOutput) {
         if (rawOutput == null) return "";
 
@@ -242,7 +255,11 @@ public class CrySLToLLMGenerator {
                 .trim();
     }
 
+    /**
+     * Format a CrySL predicate as name[param1, param2, ...] for prompt readability.
+     */
     private static String formatPredicate(CrySLPredicate pred) {
+        // Format predicate as name[param1, param2, ...] for prompt readability.
         String name = pred.getPredName(); // correct method name
         StringBuilder paramsBuilder = new StringBuilder();
 

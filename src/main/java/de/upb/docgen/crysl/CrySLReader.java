@@ -42,11 +42,12 @@ public class CrySLReader {
 // - safe extraction (no Utils.extract / no writing into cwd)
 // ---------------------------------------------------------
 
+// Resource roots within the JAR/classpath.
 private static final String CRYSL_RULES_DIR = "CrySLRules";
 private static final String FTL_TEMPLATES_DIR = "FTLTemplates";
 private static final String SYMBOL_PROPERTIES_RESOURCE = "Templates/symbol.properties";
 
-// reuse one temp dir for extracted resources
+// Reuse one temp dir for extracted resources.
 private static Path cachedTempDir = null;
 
 /**
@@ -177,6 +178,7 @@ private static Path cachedTempDir = null;
 
 		String resourcePath = FTL_TEMPLATES_DIR + "/" + ftlName;
 
+		// IDE mode: file resource
 		URL fileUrl = CrySLReader.class.getClassLoader().getResource(resourcePath);
 		if (fileUrl != null && "file".equalsIgnoreCase(fileUrl.getProtocol())) {
 			try {

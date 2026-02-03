@@ -30,8 +30,10 @@ FILENAME_TEMPLATE = "sanitized_rule_{fqcn}_{lang}.json"
 SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
 
 
+# Cache for sanitized rules to avoid repeated disk IO.
 _SANITIZED_CACHE: Dict[Tuple[str, str], Optional[Dict]] = {}
 
+# Prompt sizing/limits to keep LLM context bounded.
 MAX_DEPENDENCIES = 3          # include at most 3 dependencies in the prompt
 MAX_ITEMS_PER_DEP = 6         # include at most 6 items per dependency
 MAX_DEP_TEXT_CHARS = 1200     # hard cap on dependency text size
@@ -39,6 +41,7 @@ MAX_CONTRACT_CHARS = 3500      # total contract size in the prompt
 MAX_SECTION_CHARS = 1200       # per-section cap
 MAX_SECTION_LINES = 25         # per-section line cap (keeps it readable)
 
+# Fallback primer used when PDF-based RAG is unavailable.
 FALLBACK_CRYSL_PRIMER = """
 CrySL is a rule language that specifies correct (secure) API usage for crypto libraries.
 
@@ -65,17 +68,20 @@ SECTION_NAMES = [
     "FORBIDDEN",
 ]
 
+# Normalize whitespace in large text blocks.
 def _clean_text(s: str) -> str:
     s = (s or "").strip()
     s = re.sub(r"\n{3,}", "\n\n", s)   # collapse huge blank blocks
     return s
 
+# Cap a text block by line count.
 def _cap_lines(s: str, max_lines: int) -> str:
     lines = (s or "").splitlines()
     if len(lines) <= max_lines:
         return s
     return "\n".join(lines[:max_lines]) + "\n... (truncated)"
 
+# Cap a text block by character count.
 def _cap_chars(s: str, max_chars: int) -> str:
     s = s or ""
     if max_chars <= 0 or len(s) <= max_chars:
@@ -86,12 +92,14 @@ def _cap_chars(s: str, max_chars: int) -> str:
     return head + "\n... (truncated)"
 
 
+# Clean a list item value for display.
 def clean_item(value) -> str:
     if not isinstance(value, str):
         return str(value)
     cleaned = value.strip()
     return cleaned.lstrip(",").strip() if cleaned.startswith(",") else cleaned
 
+# Convert a section list to newline text (or fallback).
 def lines_to_text(section) -> str:
     if isinstance(section, list):
         return "\n".join(section) if section else "_no entries_"
@@ -99,6 +107,7 @@ def lines_to_text(section) -> str:
         return "_no entries_"
     return str(section)
 
+# Compact a list to max_items while de-duplicating.
 def _compact_list(items, max_items: int) -> list[str]:
     out = []
     seen = set()
@@ -112,6 +121,7 @@ def _compact_list(items, max_items: int) -> list[str]:
             break
     return out
 
+# Normalize list-like values into a string list.
 def _normalize_listish(value) -> List[str]:
     if value is None:
         return []
@@ -122,14 +132,17 @@ def _normalize_listish(value) -> List[str]:
         return [val] if val else []
     return [clean_item(value)]
 
+# Convert a FQCN into a filesystem-safe name.
 def safe_class_name(fqcn: str) -> str:
     return re.sub(r"[^a-zA-Z0-9.\-]", "_", fqcn)
 
 
+# Compute the sanitized rule JSON path for a class/language.
 def rule_path(fqcn: str, lang: str) -> Path:
     return SANITIZED_DIR / FILENAME_TEMPLATE.format(fqcn=fqcn, lang=lang)
 
 
+# Load JSON quietly (returns None on error).
 def load_json_quiet(path: Path) -> Optional[Dict]:
     if not path.exists():
         return None
@@ -140,6 +153,7 @@ def load_json_quiet(path: Path) -> Optional[Dict]:
         print(f"[WARN] Could not read {path}: {exc}", file=sys.stderr)
         return None
     
+# Load the first available sanitized rule for any language in preferred order.
 def load_sanitized_rule(fqcn: str, languages: List[str]) -> Optional[Dict]:
     for lang in languages:
         key = (fqcn, lang)
@@ -154,6 +168,7 @@ def load_sanitized_rule(fqcn: str, languages: List[str]) -> Optional[Dict]:
             return data
     return None
     
+# Parse a CrySL rule into section -> lines dict.
 def crysl_to_json_lines(crysl_text: str) -> Dict[str, List[str]]:
     sections = ["SPEC", "OBJECTS", "EVENTS", "ORDER", "CONSTRAINTS", "REQUIRES", "ENSURES", "FORBIDDEN"]
 
@@ -174,6 +189,7 @@ def crysl_to_json_lines(crysl_text: str) -> Dict[str, List[str]]:
 
     return parsed
 
+# Shape the CrySL contract to be stable, readable, and within size caps.
 def shape_crysl_contract(crysl_summary: str) -> str:
     """
     Make contract stable + readable + bounded.
@@ -235,6 +251,7 @@ def shape_crysl_contract(crysl_summary: str) -> str:
     # Final hard cap (should rarely happen)
     return _cap_chars(out, MAX_CONTRACT_CHARS)
 
+# Collect dependency constraints for prompt context.
 def collect_dependency_constraints(target_fqcn: str, languages: List[str]) -> Tuple[List[str], Dict[str, List[str]]]:
     dep_map: Dict[str, List[str]] = {}
     order: List[str] = []
@@ -259,6 +276,7 @@ def collect_dependency_constraints(target_fqcn: str, languages: List[str]) -> Tu
     return order, dep_map
 
 
+# Format dependency constraints into a compact list string.
 def format_dependency_constraints(
     dep_order: list[str],
     dep_map: dict[str, list[str]],
@@ -284,6 +302,7 @@ def format_dependency_constraints(
 
 
 
+# Collect dependency ENSURES for prompt context.
 def collect_dependency_ensures(target_fqcn: str, languages: List[str], depth: int = 1) -> Tuple[List[str], Dict[str, List[str]]]:
     dep_map: Dict[str, List[str]] = {}
     order: List[str] = []
@@ -314,6 +333,7 @@ def collect_dependency_ensures(target_fqcn: str, languages: List[str], depth: in
     return order, dep_map
 
 
+# Format dependency ENSURES into a compact list string.
 def format_dependency_ensures(
     dep_order: list[str],
     dep_map: dict[str, list[str]],
@@ -337,6 +357,7 @@ def format_dependency_ensures(
         out = out[:max_chars].rsplit("\n", 1)[0] + "\n- (truncated)"
     return out
 
+# Normalize a PDF chunk to text.
 def _chunk_to_text(chunk) -> str:
     """Normalize a PDF chunk to text (supports str or objects with .text)."""
     if chunk is None:
@@ -349,6 +370,7 @@ def _chunk_to_text(chunk) -> str:
     return str(chunk)
 
 
+# Retrieve top-k chunks from FAISS for a query embedding.
 def retrieve_top_k(idx, chunks, query_embedding, k: int = 2, per_chunk_max: int = 900) -> list[str]:
     """
     Minimal FAISS retrieval helper:
@@ -379,6 +401,7 @@ def retrieve_top_k(idx, chunks, query_embedding, k: int = 2, per_chunk_max: int 
 
     return results
     
+# Build or load a short CrySL primer (semantics-only), optionally augmented via RAG.
 def load_crysl_primer(pdf_path: Optional[Path], emb_model: str, cache_dir: Path) -> str:
     """
     Returns a short, stable CrySL primer (semantics-only).
@@ -555,6 +578,7 @@ def load_crysl_primer(pdf_path: Optional[Path], emb_model: str, cache_dir: Path)
     except Exception:
         return FALLBACK_CRYSL_PRIMER
 
+# Build the secure-code prompt from the contract + primer + dependency context.
 def build_secure_prompt(context: Dict[str, str]) -> str:
     dep_ensures = context.get("dep_ensures_text") or "(no dependency guarantees)"
     dep_constraints = context.get("dep_constraints_text") or "(no dependency constraints)"
@@ -663,7 +687,7 @@ IMPORT_WHITELIST = {
     "GeneralSecurityException": "java.security.GeneralSecurityException",
 }
 
-
+# Extract fenced Java code if present.
 def _extract_fenced_java(text: str) -> tuple[str, bool]:
     # Prefer ```java ... ```
     m = re.search(r"```java\s*(.*?)\s*```", text, flags=re.DOTALL | re.IGNORECASE)
@@ -675,11 +699,13 @@ def _extract_fenced_java(text: str) -> tuple[str, bool]:
         return m.group(1).strip(), True
     return text.strip(), False
 
+# Rewrap Java code in a fenced block (if needed).
 def _rewrap_fenced_java(java_code: str, had_fence: bool) -> str:
     if not had_fence:
         return java_code.strip()
     return "```java\n" + java_code.strip() + "\n```"
 
+# Normalize the public class name to the required name.
 def _normalize_public_class_name(java_code: str, desired: str = "SecureUsageExample") -> str:
     # Normalize any "public [final|abstract] class X" to "public class SecureUsageExample"
     return re.sub(
@@ -690,6 +716,7 @@ def _normalize_public_class_name(java_code: str, desired: str = "SecureUsageExam
     )
 
 
+# Add missing imports for whitelisted symbols and normalize class name.
 def auto_import_patch(llm_text: str) -> str:
     java_code, had_fence = _extract_fenced_java(llm_text)
     java_code = _normalize_public_class_name(java_code, "SecureUsageExample")
@@ -733,11 +760,13 @@ def auto_import_patch(llm_text: str) -> str:
     patched = "\n".join(lines).strip()
     return _rewrap_fenced_java(patched, had_fence)
 
+# Resolve javac binary (with optional CI override).
 def _javac_cmd() -> Optional[str]:
     # Allow overriding in CI
     cmd = os.getenv("JAVAC_BIN", "").strip() or "javac"
     return cmd if which(cmd) else None
 
+# Compile generated Java and return (ok, error_text).
 def compile_java(java_code: str) -> tuple[bool, str]:
     javac = _javac_cmd()
     if not javac:
@@ -761,6 +790,7 @@ def compile_java(java_code: str) -> tuple[bool, str]:
         return False, (proc.stderr or proc.stdout or "").strip()
 
 
+# End-to-end secure example generation with compile/repair loop.
 def process_rule(
     json_path: Path,
     language: str,
@@ -949,6 +979,7 @@ def process_rule(
     return patched
 
 
+# Parse CLI arguments for code generation.
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -983,6 +1014,7 @@ def parse_args() -> argparse.Namespace:
 
 
 
+# CLI entry point: wire arguments into process_rule.
 def main() -> None:
     args = parse_args()
     json_path = Path(args.json_path)

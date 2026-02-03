@@ -6,8 +6,10 @@ package de.upb.docgen;
 
 public class DocSettings {
 
+    // Singleton holder to share parsed settings across the app.
     private static final DocSettings singletonSettings = new DocSettings();
 
+    // Output and optional override paths.
     private String reportDirectory = null;
     private String rulesetPathDir = null;
     private String ftlTemplatesPath = null;
@@ -23,9 +25,11 @@ public class DocSettings {
 
 
 
+    // LLM feature toggles (default enabled).
     private boolean genLllmExplanations = true;
     private boolean genLlmExamples = true;
 
+    // LLM backend selection (default: OpenAI).
     private String llmBackend = "openai"; // default
 
     private DocSettings() {
@@ -120,6 +124,7 @@ public class DocSettings {
         return llmBackend;
     }
 
+    // Enforces value presence for flags that require an argument.
     private static String requireValue(String[] settings, int i, String flagName) {
     if (i + 1 >= settings.length) {
         showErrorMessage("Missing value for " + flagName);

@@ -24,19 +24,24 @@ import static de.upb.docgen.llm.CrySLToLLMGenerator.cleanLLMCodeBlock;
 
 public class DocumentGeneratorMain {
 
+	// Shared reader for filesystem-based CrySL rules.
 	private static final CrySLRuleReader ruleReader = new CrySLRuleReader();
 
+	/**
+	 * Entry point: loads CrySL rules, builds composed docs, optionally runs LLM steps,
+	 * and renders HTML outputs into the report directory.
+	 */
 	public static void main(String[] args) throws IOException, TemplateException, CryptoAnalysisException {
-		// create singleton to access parsed flags from other classes
+		// Track total execution time across the full pipeline.
         final long start = System.nanoTime();
         try {
+            // Supported natural-language outputs for LLM explanations.
             List<String> LANGUAGES = List.of("English", "Portuguese", "German", "French");
             DocSettings docSettings = DocSettings.getInstance();
             System.out.println("Parsing CLI Flags");
             docSettings.parseSettingsFromCLI(args);
 
-            // read CryslRules from absolutePath provided by the user
-            // Sven feature (PR#11/#12): if --rulesDir isn't provided, read CrySL rules from the JAR
+            // Load CrySL rules either from user-provided folder or bundled JAR resources.
             System.out.println("Reading CrySL Rules");
             List<CrySLRule> rules;
             if (docSettings.getRulesetPathDir() != null && !docSettings.getRulesetPathDir().trim().isEmpty()) {
@@ -47,6 +52,7 @@ public class DocumentGeneratorMain {
 
 
             System.out.println("Reading CrySL Rules Done");
+            // Helpers to build composed documentation sections from CrySL rules.
             ClassEventForb cef = new ClassEventForb();
             ConstraintsVc valueconstraint = new ConstraintsVc();
             ConstraintsPred predicateconstraint = new ConstraintsPred();
@@ -63,14 +69,14 @@ public class DocumentGeneratorMain {
             Map<String, List<CrySLPredicate>> mapEnsures = new HashMap<>();
             Map<String, List<CrySLPredicate>> mapRequires = new HashMap<>();
 
-            // generate 2 Maps with Ensures, Requires predicates
+            // Build class -> predicates maps to resolve cross-rule dependencies.
             for (CrySLRule ruleEntry : rules) {
                 CrySLRule rule = ruleEntry;
                 mapEnsures.put(rule.getClassName(), rule.getPredicates());
                 mapRequires.put(rule.getClassName(), rule.getRequiredPredicates());
             }
 
-            // iterate over every Crysl rule, create composedRule for every Rule
+            // Create composed rules (all sections assembled for FreeMarker).
             List<CrySLRule> cryslRuleList = new ArrayList<>();
             for (CrySLRule ruleEntry : rules) {
                 ComposedRule composedRule = new ComposedRule();
@@ -151,7 +157,7 @@ public class DocumentGeneratorMain {
                 cryslRuleList.add(rule);
             }
 
-            // Necessary DataStructure to generate Requires and Ensures Tree
+            // Build dependency trees for requires/ensures rendering.
             Map<String, List<Map<String, List<String>>>> ensuresToRequiresMap = Utils.mapPredicates(mapRequires,
                     mapEnsures);
             Map<String, List<Map<String, List<String>>>> requiresToEnsuresMap = Utils.mapPredicates(mapEnsures,
@@ -177,6 +183,7 @@ public class DocumentGeneratorMain {
 //
 //        System.out.println("order: " + order);
 
+            // Verify dependency ordering and record rule-specific dependency list.
             for (int i = 0; i < cryslRuleList.size(); i++) {
                 CrySLRule rule = cryslRuleList.get(i);
                 ComposedRule composedRule = composedRuleList.get(i);
@@ -191,6 +198,7 @@ public class DocumentGeneratorMain {
 
 // LLM Call for Explanation (fixed)
 
+            // LLM cache for explanations (one file per class/language).
             File cacheDir = new File("Output/resources/llm_cache");
             Files.createDirectories(cacheDir.toPath());
 
@@ -201,6 +209,7 @@ public class DocumentGeneratorMain {
                 System.out.println("LLM explanations: DISABLED by flag");
             }
 
+            // Load (or write) explanation cache and attach to composed rules.
             for (int i = 0; i < cryslRuleList.size(); i++) {
                 CrySLRule rule = cryslRuleList.get(i);
                 ComposedRule composedRule = composedRuleList.get(i);
@@ -246,6 +255,7 @@ public class DocumentGeneratorMain {
             }
             //LLM Call for Secure and Insecure Code Generation
 
+            // LLM cache for code examples (secure/insecure per rule).
             File codeCacheDir = new File("Output/resources/code_cache");
             codeCacheDir.mkdirs();
 
@@ -321,6 +331,7 @@ public class DocumentGeneratorMain {
                     }
                 }
 
+                // Attach code examples to the composed rule for template rendering.
                 composedRule.setSecureExample(secure);
                 composedRule.setInsecureExample(insecure);
             }
@@ -362,6 +373,7 @@ public class DocumentGeneratorMain {
             }
 
         } finally {
+            // Emit total execution time as a single metric for the run.
             long end = System.nanoTime();
             double elapsedMs = (end - start) / 1_000_000.0;
             System.out.printf("Total execution time: %.3f ms (%.3f s)%n", elapsedMs, elapsedMs / 1000.0);

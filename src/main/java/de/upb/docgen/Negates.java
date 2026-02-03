@@ -28,11 +28,19 @@ public class Negates {
 
 	static PrintWriter out;
 
+	/**
+	 * Template for negated predicate sentences.
+	 */
 	private static String getTemplateNegated() throws IOException {
 		String strD = Utils.getTemplatesTextString("Negation");
 		return strD;
 	}
 
+	/**
+	 * Build negation sentences for predicates on "this" that are negated.
+	 * Resolves conditional predicates to the methods that trigger them and
+	 * substitutes parameter types for readability.
+	 */
 	public ArrayList<String> getNegates(CrySLRule rule) throws IOException {
 		ArrayList<String> composedNegates = new ArrayList<>();
 
@@ -40,11 +48,13 @@ public class Negates {
 		List<TransitionEdge> edges = smg.getEdges();
 		List<Entry<String, String>> dataTypes = rule.getObjects();
 		Map<String, String> DTMap = new LinkedHashMap<>();
+		// Map type -> variable name for parameter substitution in method labels.
 		for (Entry<String, String> dt : dataTypes) {
 			DTMap.put(dt.getValue(), FunctionUtils.getDataType(rule, dt.getValue()));
 		}
 		String negjoined = "";
 
+		// Select only negated predicates that refer to "this".
 		List<CrySLPredicate> predNegatesList = rule.getPredicates().stream()
 				.filter(e -> e.toString().contains("this") && e.toString().contains("!")).collect(Collectors.toList());
 
@@ -54,6 +64,7 @@ public class Negates {
 
 				if (neg instanceof CrySLCondPredicate) {
 
+					// Conditional negation: tie to specific state-machine edges.
 					CrySLCondPredicate conPred = (CrySLCondPredicate) neg;
 
 					for (TransitionEdge edge : edges) {
@@ -69,6 +80,7 @@ public class Negates {
 								predmethodNames.add(preM[preM.length - 1].replace(";", "").replaceAll("\\( ", "\\(")
 										.replaceAll(" ", ","));
 							}
+							// Substitute parameter types into method labels and join with commas.
 							for (String tempStr : predmethodNames) {
 								List<String> extractParamList = new ArrayList<>();
 								int startIndex = tempStr.indexOf("(");
@@ -94,6 +106,7 @@ public class Negates {
 								finalpredmethodNamesList.add(tempStr);
 								negjoined = String.join(", ", finalpredmethodNamesList);
 							}
+							// Render the negation sentence once per matching edge.
 							String strRetOne = getTemplateNegated();
 							Map<String, String> valuesMap = new HashMap<String, String>();
 							valuesMap.put("NegatedMethods", negjoined);

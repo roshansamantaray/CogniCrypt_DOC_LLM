@@ -28,6 +28,9 @@ public class EnsuresCaseTwo {
 
 	static PrintWriter out;
 
+	/**
+	 * Map return-value variables to the method names that produce them.
+	 */
 	private static Map<String, String> getReturnValues(CrySLRule rule) {
 		Map<String, String> retValMap = new LinkedHashMap<>();
 
@@ -58,41 +61,70 @@ public class EnsuresCaseTwo {
 		return retValMap;
 	}
 
+	/**
+	 * Template for conditional ensures with return value: verb + method.
+	 */
 	private static String getTemplateReturnValueOne() throws IOException {
 		return Utils.getTemplatesTextString("EnsuresClauseReturnVal_verbmeth");
 	}
 
+	/**
+	 * Template for conditional ensures with return value: verb + noun + method.
+	 */
 	private static String getTemplateReturnValueTwo() throws IOException {
 		return Utils.getTemplatesTextString("EnsuresClauseReturnVal_verbnounmeth");
 	}
 
+	/**
+	 * Template for unconditional ensures with return value: verb.
+	 */
 	private static String getTemplateReturnValueThree() throws IOException {
 		return Utils.getTemplatesTextString("EnsuresClauseReturnVal_verb");
 	}
 
+	/**
+	 * Template for unconditional ensures with return value: verb + noun.
+	 */
 	private static String getTemplateReturnValueFour() throws IOException {
 		return Utils.getTemplatesTextString("EnsuresClauseReturnVal_verbnoun");
 	}
 
+	/**
+	 * Template for conditional ensures without return value: verb + method.
+	 */
 	private static String getTemplateOne() throws IOException {
 		return Utils.getTemplatesTextString("Ensures-thisNA-verbmeth");
 
 	}
 
+	/**
+	 * Template for conditional ensures without return value: verb + noun + method.
+	 */
 	private static String getTemplateTwo() throws IOException {
 		String strDSix = Utils.getTemplatesTextString("Ensures-thisNA-verbnounmeth");
 		return strDSix;
 	}
 
+	/**
+	 * Template for unconditional ensures without return value: verb.
+	 */
 	private static String getTemplateThree() throws IOException {
 		return Utils.getTemplatesTextString("Ensures-thisNA-verb");
 
 	}
 
+	/**
+	 * Template for unconditional ensures without return value: verb + noun.
+	 */
 	private static String getTemplateFour() throws IOException {
 		return Utils.getTemplatesTextString("Ensures-thisNA-verbnoun");
 	}
 
+	/**
+	 * Build ensures sentences for predicates that do NOT involve "this".
+	 * Handles both return-value predicates and parameter predicates, with
+	 * optional conditional edges and tooltip links to requiring classes.
+	 */
 	public ArrayList<String> getEnsures(CrySLRule rule, Map<String, List<Map<String, List<String>>>> stringListMap)
 			throws IOException {
 		ArrayList<String> composedEnsures = new ArrayList<>();
@@ -119,6 +151,7 @@ public class EnsuresCaseTwo {
 
 			String paramStr = ((CrySLObject) elementN.getParameters().get(0)).getVarName();
 			if (retTypeMap.containsKey(paramStr)) {
+				// Branch: predicate applies to a returned value.
 
 				String returnValMethod = retTypeMap.get(paramStr);
 
@@ -211,7 +244,7 @@ public class EnsuresCaseTwo {
 			}
 
 			else {
-
+				// Branch: predicate applies to a method parameter (non-return).
 				Map<String, String> paraMethNameMap = new LinkedHashMap<>();
 				Map<String, String> paraPosMap = new LinkedHashMap<>();
 				String paraPosMapValStr = null;
@@ -426,6 +459,9 @@ public class EnsuresCaseTwo {
 		return composedEnsures;
 	}
 
+	/**
+	 * Wrap a word with a tooltip linking to classes that require the predicate.
+	 */
 	private String toHoverLink(CrySLRule rule, Map<String, List<Map<String, List<String>>>> stringListMap, String word,
 			String predicate) {
 		List<Map<String, List<String>>> requiresOfClasses = stringListMap.get(rule.getClassName());
@@ -443,6 +479,9 @@ public class EnsuresCaseTwo {
 		return word;
 	}
 
+	/**
+	 * Build HTML links for classes that require a given predicate.
+	 */
 	private String htmlLinksClass(List<Map<String, List<String>>> maps, String var1, String predicate) {
 		StringBuilder sb = new StringBuilder();
 		for (Map<String, List<String>> map : maps) {
@@ -455,6 +494,9 @@ public class EnsuresCaseTwo {
 		return sb.toString();
 	}
 
+	/**
+	 * Escape square brackets for safe regex matching.
+	 */
 	private String escapeString(String inputString) {
 		// Check if the input string contains square brackets
 		if (inputString.contains("[") || inputString.contains("]")) {

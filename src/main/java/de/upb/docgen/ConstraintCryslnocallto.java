@@ -28,10 +28,18 @@ public class ConstraintCryslnocallto {
 
 	static PrintWriter out;
 
+	/**
+	 * Load the template for "noCallTo" constraints.
+	 */
 	private static char[] getTemplatenocallto() throws IOException {
 		return Utils.getTemplatesText("ConsraintCrySLnocalltoClause");
 	}
 
+	/**
+	 * Build formatted "noCallTo" constraints for a rule.
+	 * Parses CrySL constraints that express noCallTo(...) implies a value constraint,
+	 * then maps affected parameters back to method signatures for rendering.
+	 */
 	public ArrayList<String> getnoCalltoConstraint(CrySLRule rule) throws IOException {
 		ArrayList<String> composedNocallToConstraints = new ArrayList<>();
 
@@ -48,11 +56,13 @@ public class ConstraintCryslnocallto {
 				if (conCryslISL instanceof CrySLConstraint) {
 					CrySLConstraint crySLConstraint = ((CrySLConstraint) conCryslISL);
 					if (crySLConstraint.getName().contains("noCallTo")) {
+						// Only process implication form: noCallTo(...) implies VC(...)
 						if ("implies".equals(valueOf(crySLConstraint.getOperator()))) {
 							if (crySLConstraint.getLeft() instanceof CrySLPredicate
 									&& "noCallTo".equals(((CrySLPredicate) crySLConstraint.getLeft()).getPredName())
 									&& crySLConstraint.getRight() instanceof CrySLValueConstraint) {
 								CrySLPredicate crySLPredicate = (CrySLPredicate) crySLConstraint.getLeft();
+								// Collect method names referenced in noCallTo(...)
 								for (ICrySLPredicateParameter parameter : crySLPredicate.getParameters()) {
 									methds.add(FunctionUtils.getEventCrySLMethodValue((CrySLMethod) parameter));
 								}
@@ -67,6 +77,7 @@ public class ConstraintCryslnocallto {
 								valuesWhichHaveToBeSet = StringUtils.join(crySLValueConstraint.getValueRange(), ", ");
 								String joinedstring = StringUtils.join(methds, ", ");
 								List<CrySLMethod> getInstances = new ArrayList<>();
+								// Identify all methods that take the constrained object as a parameter.
 								for (CrySLMethod method : crySLMethods) {
 									for (Entry<String, String> parameters : method.getParameters()) {
 										if (cryslObjectEntry != null
@@ -94,6 +105,7 @@ public class ConstraintCryslnocallto {
 									extractedWithObject.add(sb.toString());
 									sb.setLength(0);
 								}
+								// Render each affected method using the template.
 								for (String s : extractedWithObject) {
 									String tempForSplit = s;
 									List<String> ls = Arrays.asList(tempForSplit.split("\\|"));
@@ -118,12 +130,18 @@ public class ConstraintCryslnocallto {
 		return composedNocallToConstraints;
 	}
 
+	/**
+	 * Append a method if it is not already in the list.
+	 */
 	public static <T> void addIfNotExists(List<CrySLMethod> list, CrySLMethod element) {
 		if (!list.contains(element)) {
 			list.add(element);
 		}
 	}
 
+	/**
+	 * Extract all unique CrySL methods referenced in the rule's state machine.
+	 */
 	private static ArrayList<CrySLMethod> extractMethodsFromSmg(CrySLRule rule) {
 		ArrayList<CrySLMethod> allMethodsOfCrySLRule = new ArrayList<>();
 		StateMachineGraph smg = rule.getUsagePattern();
