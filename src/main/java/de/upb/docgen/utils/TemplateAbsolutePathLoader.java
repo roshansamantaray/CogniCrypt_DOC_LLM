@@ -8,6 +8,15 @@ import java.io.*;
 public class TemplateAbsolutePathLoader implements TemplateLoader {
 
     public Object findTemplateSource(String name) throws IOException {
+        if (name == null) return null;
+        if (name.startsWith("file:")) {
+            try {
+                File uriFile = new File(java.net.URI.create(name));
+                return uriFile.isFile() ? uriFile : null;
+            } catch (IllegalArgumentException e) {
+                // fall back to raw name if URI parsing fails
+            }
+        }
         File source = new File(name);
         return source.isFile() ? source : null;
     }

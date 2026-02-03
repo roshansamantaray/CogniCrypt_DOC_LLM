@@ -43,9 +43,10 @@ public class FreeMarkerWriter {
         String ftlDir = DocSettings.getInstance().getFtlTemplatesPath();
 
         if (ftlDir != null && !ftlDir.trim().isEmpty()) {
-            template = cfg.getTemplate(Utils.pathForTemplates(new File(ftlDir, "sidebar.ftl").getPath()));
+            template = cfg.getTemplate(Utils.pathForTemplates(new File(ftlDir, "sidebar.ftl").toURI().toString()));
         } else {
-            template = cfg.getTemplate(CrySLReader.readFTLFromJar("sidebar.ftl").getPath());
+            File file = CrySLReader.readFTLFromJar("sidebar.ftl");
+            template = cfg.getTemplate(Utils.pathForTemplates(file.toURI().toString()));
         }
 
         // 2.3. Generate the output
@@ -117,9 +118,11 @@ public class FreeMarkerWriter {
             String ftlDir = DocSettings.getInstance().getFtlTemplatesPath();
 
             if (ftlDir != null && !ftlDir.trim().isEmpty()) {
-                template = cfg.getTemplate(Utils.pathForTemplates(new File(ftlDir, "singleclass.ftl").getPath()));
+                template = cfg.getTemplate(Utils.pathForTemplates(new File(ftlDir, "singleclass.ftl").toURI().toString()));
             } else {
-                template = cfg.getTemplate(CrySLReader.readFTLFromJar("singleclass.ftl").getPath());
+                File file = CrySLReader.readFTLFromJar("singleclass.ftl");
+                template = cfg.getTemplate(Utils.pathForTemplates(file.toURI().toString()));
+
             }
 
 
@@ -143,6 +146,7 @@ public class FreeMarkerWriter {
         // Some other recommended settings:
         cfg.setDefaultEncoding("UTF-8");
         cfg.setLocale(Locale.ENGLISH);
+        cfg.setLocalizedLookup(false);
         cfg.setTemplateExceptionHandler(TemplateExceptionHandler.RETHROW_HANDLER);
     }
 
@@ -166,27 +170,23 @@ public class FreeMarkerWriter {
         Template cryslTemplate;
 
         if (ftlDir != null && !ftlDir.trim().isEmpty()) {
-            // OS-agnostic: build paths with File (not string "/")
             frontpageTemplate = cfg.getTemplate(
-                    Utils.pathForTemplates(new File(ftlDir, "frontpage.ftl").getPath())
+                    Utils.pathForTemplates(new File(ftlDir, "frontpage.ftl").toURI().toString())
             );
             rootpageTemplate = cfg.getTemplate(
-                    Utils.pathForTemplates(new File(ftlDir, "rootpage.ftl").getPath())
+                    Utils.pathForTemplates(new File(ftlDir, "rootpage.ftl").toURI().toString())
             );
             cryslTemplate = cfg.getTemplate(
-                    Utils.pathForTemplates(new File(ftlDir, "crysl.ftl").getPath())
+                    Utils.pathForTemplates(new File(ftlDir, "crysl.ftl").toURI().toString())
             );
         } else {
-            // Sven feature: fallback to bundled templates in JAR
-            frontpageTemplate = cfg.getTemplate(
-                    Utils.pathForTemplates(CrySLReader.readFTLFromJar("frontpage.ftl").getPath())
-            );
-            rootpageTemplate = cfg.getTemplate(
-                    Utils.pathForTemplates(CrySLReader.readFTLFromJar("rootpage.ftl").getPath())
-            );
-            cryslTemplate = cfg.getTemplate(
-                    Utils.pathForTemplates(CrySLReader.readFTLFromJar("crysl.ftl").getPath())
-            );
+            File front = CrySLReader.readFTLFromJar("frontpage.ftl");
+            File root  = CrySLReader.readFTLFromJar("rootpage.ftl");
+            File crysl = CrySLReader.readFTLFromJar("crysl.ftl");
+
+            frontpageTemplate = cfg.getTemplate(Utils.pathForTemplates(front.toURI().toString()));
+            rootpageTemplate  = cfg.getTemplate(Utils.pathForTemplates(root.toURI().toString()));
+            cryslTemplate     = cfg.getTemplate(Utils.pathForTemplates(crysl.toURI().toString()));
         }
 
         try (Writer fileWriter = new FileWriter(new File(
@@ -209,4 +209,3 @@ public class FreeMarkerWriter {
     }
 
 }
-
