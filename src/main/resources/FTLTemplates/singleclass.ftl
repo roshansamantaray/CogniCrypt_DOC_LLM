@@ -478,6 +478,10 @@
             </p>
         </div>
         <div class="fortree">
+        <div style="text-align:right; margin: 0.25em 0 0.5em;">
+            <button type="button" onclick="expandAllTrees()">Expand</button>
+            <button type="button" onclick="collapseAllTrees()">Collapse</button>
+        </div>
         <ul class="tree">
             <#macro reqTree treenode>
                 <li>
@@ -519,6 +523,10 @@
             </p>
         </div>
         <div class="fortree">
+            <div style="text-align:right; margin: 0.25em 0 0.5em;">
+                <button type="button" onclick="expandAllTrees()">Expand</button>
+                <button type="button" onclick="collapseAllTrees()">Collapse</button>
+            </div>
             <ul class="tree">
                 <#macro ensTree treenode>
                     <li>
@@ -791,6 +799,8 @@
                 content.style.display = "none";
             } else {
                 content.style.display = "block";
+                // Ensure first descendants are visible when a tree section opens.
+                expandFirstTreeLevel();
             }
         });
     }
@@ -823,6 +833,34 @@
         } else {
             childUl.style.display = "none";
             element.textContent = "+";
+        }
+    }
+
+    // Expand only the first descendants of each tree by default.
+    function expandFirstTreeLevel() {
+        var trees = document.querySelectorAll("ul.tree");
+        for (var t = 0; t < trees.length; t++) {
+            var rootLis = trees[t].children;
+            for (var r = 0; r < rootLis.length; r++) {
+                var li = rootLis[r];
+                var childUl = null;
+                var toggleIcon = null;
+                for (var c = 0; c < li.children.length; c++) {
+                    var el = li.children[c];
+                    if (el.classList && el.classList.contains("toggle-icon")) {
+                        toggleIcon = el;
+                    }
+                    if (el.tagName && el.tagName.toLowerCase() === "ul") {
+                        childUl = el;
+                    }
+                }
+                if (childUl) {
+                    childUl.style.display = "";
+                    if (toggleIcon) {
+                        toggleIcon.textContent = "−";
+                    }
+                }
+            }
         }
     }
 
@@ -935,6 +973,38 @@
         });
     }
 
+    function expandAllTrees() {
+        var trees = document.querySelectorAll("ul.tree");
+        for (var t = 0; t < trees.length; t++) {
+            var uls = trees[t].querySelectorAll("ul");
+            for (var u = 0; u < uls.length; u++) {
+                uls[u].style.display = "";
+            }
+            var icons = trees[t].querySelectorAll(".toggle-icon");
+            for (var i = 0; i < icons.length; i++) {
+                if (icons[i].textContent !== "") {
+                    icons[i].textContent = "−";
+                }
+            }
+        }
+    }
+
+    function collapseAllTrees() {
+        var trees = document.querySelectorAll("ul.tree");
+        for (var t = 0; t < trees.length; t++) {
+            var uls = trees[t].querySelectorAll("ul");
+            for (var u = 0; u < uls.length; u++) {
+                uls[u].style.display = "none";
+            }
+            var icons = trees[t].querySelectorAll(".toggle-icon");
+            for (var i = 0; i < icons.length; i++) {
+                if (icons[i].textContent !== "") {
+                    icons[i].textContent = "+";
+                }
+            }
+        }
+    }
+
     var dotString = `
         ${stateMachine}
 `;
@@ -954,3 +1024,4 @@
 </script>
 </body>
 </html>
+
