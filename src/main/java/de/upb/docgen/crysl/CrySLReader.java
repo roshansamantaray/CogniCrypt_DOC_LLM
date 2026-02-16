@@ -50,56 +50,104 @@ private static final String SYMBOL_PROPERTIES_RESOURCE = "Templates/symbol.prope
 // Reuse one temp dir for extracted resources.
 private static Path cachedTempDir = null;
 
-/**
- * Read ALL CrySL rules bundled inside the JAR under /CrySLRules.
- * If running from IDE (resources on disk), read from filesystem folder instead.
- */
-	public static List<CrySLRule> readRulesFromJar() throws IOException {
-		CrySLModelReader reader = new CrySLModelReader();
-		List<CrySLRule> out = new ArrayList<>();
+	/**
+	 * Read ALL CrySL rules bundled inside the JAR under /CrySLRules.
+	 * If running from IDE (resources on disk), read from filesystem folder instead.
+	 */
+		public static List<CrySLRule> readRulesFromJar() throws IOException {
+			CrySLModelReader reader = new CrySLModelReader();
+			List<File> ruleFiles = new ArrayList<>();
+			Map<File, String> displayNames = new HashMap<>();
 
-		// IDE mode: resources available as real files
-		URL dirUrl = CrySLReader.class.getClassLoader().getResource(CRYSL_RULES_DIR);
-		if (dirUrl != null && "file".equalsIgnoreCase(dirUrl.getProtocol())) {
-			try {
-				File dir = Paths.get(dirUrl.toURI()).toFile();
-				File[] files = dir.listFiles((d, name) -> name != null && name.endsWith(".crysl"));
-				if (files != null) {
-					for (File f : files) {
-						try {
-							out.add(reader.readRule(f));
-						} catch (CryptoAnalysisException e) {
-							System.err.println("Error processing rule file: " + f.getName() + " - " + e.getMessage());
+			// IDE mode: resources available as real files
+			URL dirUrl = CrySLReader.class.getClassLoader().getResource(CRYSL_RULES_DIR);
+			if (dirUrl != null && "file".equalsIgnoreCase(dirUrl.getProtocol())) {
+				try {
+					File dir = Paths.get(dirUrl.toURI()).toFile();
+					File[] files = dir.listFiles((d, name) -> name != null && name.endsWith(".crysl"));
+					if (files != null) {
+						for (File f : files) {
+							ruleFiles.add(f);
+							displayNames.put(f, f.getName());
 						}
 					}
+					// Deterministic parse order for stable logs/debugging.
+					ruleFiles.sort((a, b) -> a.getName().compareToIgnoreCase(b.getName()));
+					return parseRulesBatchWithFallback(reader, ruleFiles, displayNames, false);
+				} catch (URISyntaxException e) {
+					throw new IOException("Failed to resolve /CrySLRules resource directory", e);
 				}
-				return out;
-			} catch (URISyntaxException e) {
-				throw new IOException("Failed to resolve /CrySLRules resource directory", e);
 			}
-		}
 
-		// JAR mode: enumerate entries
-		try (JarFile jar = openOwningJar(dirUrl)) {
-			Enumeration<JarEntry> entries = jar.entries();
-			String prefix = CRYSL_RULES_DIR + "/";
+			// JAR mode: enumerate entries
+			try (JarFile jar = openOwningJar(dirUrl)) {
+				Enumeration<JarEntry> entries = jar.entries();
+				String prefix = CRYSL_RULES_DIR + "/";
+				Path rulesTmpDir = getOrCreateTempDir().resolve(CRYSL_RULES_DIR);
+				Files.createDirectories(rulesTmpDir);
 
-			while (entries.hasMoreElements()) {
-				JarEntry entry = entries.nextElement();
-				String name = entry.getName();
+				while (entries.hasMoreElements()) {
+					JarEntry entry = entries.nextElement();
+					String name = entry.getName();
 
-				if (!entry.isDirectory() && name.startsWith(prefix) && name.endsWith(".crysl")) {
-					File extracted = extractJarEntryToTempFile(jar, entry);
-					try {
-						out.add(reader.readRule(extracted));
-					} catch (CryptoAnalysisException e) {
-						System.err.println("Error processing rule: " + name + " - " + e.getMessage());
+					if (!entry.isDirectory() && name.startsWith(prefix) && name.endsWith(".crysl")) {
+						// Keep original simple rule filenames in a dedicated rules temp folder.
+						// This mirrors filesystem loading semantics more closely than flattened names.
+						String fileName = Paths.get(name).getFileName().toString();
+						Path out = rulesTmpDir.resolve(fileName);
+						if (!Files.exists(out)) {
+							try (InputStream in = jar.getInputStream(entry)) {
+								if (in == null) {
+									throw new IOException("Resource stream was null for: " + name);
+								}
+								Files.copy(in, out, StandardCopyOption.REPLACE_EXISTING);
+							}
+							out.toFile().deleteOnExit();
+						}
+						File extracted = out.toFile();
+						ruleFiles.add(extracted);
+						displayNames.put(extracted, name);
 					}
 				}
 			}
+
+			// Deterministic parse order by original resource path (not temp filename).
+			ruleFiles.sort((a, b) ->
+					displayNames.getOrDefault(a, a.getName()).compareToIgnoreCase(displayNames.getOrDefault(b, b.getName()))
+			);
+			return parseRulesBatchWithFallback(reader, ruleFiles, displayNames, true);
 		}
 
-		return out;
+	private static List<CrySLRule> parseRulesBatchWithFallback(
+			CrySLModelReader reader,
+			List<File> ruleFiles,
+			Map<File, String> displayNames,
+			boolean jarStyle
+	) {
+		if (ruleFiles.isEmpty()) {
+			return new ArrayList<>();
+		}
+
+		// Preferred path: batch parse in one ResourceSet to maximize cross-rule resolution.
+		try {
+			return reader.readRulesFromFiles(ruleFiles);
+		} catch (CryptoAnalysisException batchError) {
+			// Fallback path: preserve resilient best-effort behavior from per-file parsing.
+			List<CrySLRule> out = new ArrayList<>();
+			for (File f : ruleFiles) {
+				try {
+					out.add(reader.readRule(f));
+				} catch (CryptoAnalysisException e) {
+					String display = displayNames.getOrDefault(f, f.getName());
+					if (jarStyle) {
+						System.err.println("Error processing rule: " + display + " - " + e.getMessage());
+					} else {
+						System.err.println("Error processing rule file: " + display + " - " + e.getMessage());
+					}
+				}
+			}
+			return out;
+		}
 	}
 
 	/**
