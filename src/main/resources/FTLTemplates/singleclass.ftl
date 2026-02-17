@@ -12,26 +12,26 @@
             cursor: pointer;
             user-select: none;
             display: inline-block;
-            min-width: 18px;
+            width: 18px;
             text-align: center;
-
-            /* override .tree span { margin: 0 .2em .5em; } */
-            margin: 0 6px 0 0 !important;
+            position: absolute !important;
+            left: 0;
+            margin: 0 !important;
+            top: 50%;
+            transform: translateY(-50%);
 
             /* prevent it from looking like a node-box */
             border: none !important;
             border-radius: 0 !important;
             padding: 0 !important;
             background: transparent !important;
-            position: static !important;
-
-            vertical-align: middle;
             line-height: 1;
         }
 
         /* keep alignment for leaf nodes (empty toggle icon) */
-        .toggle-icon:empty {
+        .toggle-icon.is-placeholder {
             visibility: hidden;
+            pointer-events: none;
         }
 
         /* kill the connector "stem" coming from .tree span:before */
@@ -71,6 +71,7 @@
             display: table-cell;
             padding: .5em 0;
             vertical-align: top;
+            text-align: center;
         }
 
         .tree li:before {
@@ -90,19 +91,27 @@
             right: 50%;
         }
 
+        .tree-node-wrap {
+            display: inline-block;
+            margin: 0 .2em .5em;
+            position: relative;
+            /* reserve left space for +/- icon and right space to keep node text centered */
+            padding-left: 24px;
+            padding-right: 24px;
+        }
+
         .tree code,
-        .tree span {
+        .tree-node {
             border: solid .1em #666;
             border-radius: .2em;
             display: inline-block;
-            margin: 0 .2em .5em;
             padding: .2em .5em;
             position: relative;
         }
 
         .tree ul:before,
         .tree code:before,
-        .tree span:before {
+        .tree-node:before {
             outline: solid 1px #666;
             content: "";
             height: .5em;
@@ -115,7 +124,7 @@
         }
 
         .tree code:before,
-        .tree span:before {
+        .tree-node:before {
             top: -.55em;
         }
 
@@ -126,7 +135,7 @@
         .tree > li:before,
         .tree > li:after,
         .tree > li > code:before,
-        .tree > li > span:before {
+        .tree > li > .tree-node-wrap > .tree-node:before {
             outline: none;
         }
 
@@ -176,7 +185,20 @@
         }
 
         .fortree {
-            overflow-x: auto
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .tree-controls {
+            position: sticky;
+            left: 0;
+            top: 0;
+            z-index: 2;
+            display: flex;
+            justify-content: flex-end;
+            margin: 0.25em 0 0.5em;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .floatbutton {
@@ -213,6 +235,41 @@
         }
         .copy-btn:hover {
             background-color: #666;
+        }
+
+        .code-block-container {
+            position: relative;
+            margin-top: 0.5em;
+        }
+
+        .llm-code-block {
+            margin: 0;
+            padding: 1em;
+            border-radius: 5px;
+            border-left: 4px solid #666;
+            background: #f8f8f8;
+            overflow-x: auto;
+            white-space: pre;
+            tab-size: 4;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .llm-code-block code {
+            display: block;
+            font-family: inherit;
+            white-space: inherit;
+        }
+
+        .llm-code-block.secure {
+            background: #f6fff6;
+            border-left-color: #3c763d;
+        }
+
+        .llm-code-block.insecure {
+            background: #fff6f6;
+            border-left-color: #a94442;
         }
 
         .spoiler {
@@ -478,21 +535,22 @@
             </p>
         </div>
         <div class="fortree">
-        <div style="text-align:right; margin: 0.25em 0 0.5em;">
-            <button type="button" onclick="expandAllTrees()">Expand</button>
-            <button type="button" onclick="collapseAllTrees()">Collapse</button>
+        <div class="tree-controls">
+            <button type="button" class="tree-toggle-btn" onclick="toggleAllTrees(this)">Expand</button>
         </div>
         <ul class="tree">
             <#macro reqTree treenode>
                 <li>
-                    <#if treenode.children?has_content>
-                        <span class="toggle-icon" onclick="toggleNode(this)">+</span>
-                    <#else>
-                        <span class="toggle-icon"></span>
-                    </#if>
+                    <span class="tree-node-wrap">
+                        <#if treenode.children?has_content>
+                            <span class="toggle-icon" onclick="toggleNode(this)">+</span>
+                        <#else>
+                            <span class="toggle-icon is-placeholder"></span>
+                        </#if>
 
-                    <span class="tree-node">
-                        <a href="${treenode.data}.html">${treenode.data}</a>
+                        <span class="tree-node">
+                            <a href="${treenode.data}.html">${treenode.data}</a>
+                        </span>
                     </span>
 
                     <#if treenode.children?has_content>
@@ -523,21 +581,22 @@
             </p>
         </div>
         <div class="fortree">
-            <div style="text-align:right; margin: 0.25em 0 0.5em;">
-                <button type="button" onclick="expandAllTrees()">Expand</button>
-                <button type="button" onclick="collapseAllTrees()">Collapse</button>
+            <div class="tree-controls">
+                <button type="button" class="tree-toggle-btn" onclick="toggleAllTrees(this)">Expand</button>
             </div>
             <ul class="tree">
                 <#macro ensTree treenode>
                     <li>
-                        <#if treenode.children?has_content>
-                            <span class="toggle-icon" onclick="toggleNode(this)">+</span>
-                        <#else>
-                            <span class="toggle-icon"></span>
-                        </#if>
+                        <span class="tree-node-wrap">
+                            <#if treenode.children?has_content>
+                                <span class="toggle-icon" onclick="toggleNode(this)">+</span>
+                            <#else>
+                                <span class="toggle-icon is-placeholder"></span>
+                            </#if>
 
-                        <span class="tree-node">
-                            <a href="${treenode.data}.html">${treenode.data}</a>
+                            <span class="tree-node">
+                                <a href="${treenode.data}.html">${treenode.data}</a>
+                            </span>
                         </span>
 
                         <#if treenode.children?has_content>
@@ -611,6 +670,10 @@
             It gives a natural language summary of how to securely use the API.
         </p>
     </div>
+
+    <p class="help">
+        <strong>Disclaimer:</strong> This documentation is automatically generated from a formal behavioral specification. It reflects the defined method usage rules and constraints. Explanatory notes and security-related guidance are provided for clarity and are not formal guarantees beyond the specification itself.
+    </p>
 
     <div class="language-selector">
         <label for="llm-lang-select">Language:</label>
@@ -722,10 +785,9 @@
 
     <#if rule.secureExample?? && rule.secureExample?has_content>
         <h4>Secure Example</h4>
-        <div class="code-block-container" style="position: relative;">
+        <div class="code-block-container">
             <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
-            <pre class="pre" style="white-space: pre-wrap; background:#f6fff6; border-left: 4px solid #3c763d; padding: 1em; border-radius: 5px;">
-<code>${rule.secureExample?html}</code>
+            <pre class="llm-code-block secure"><code class="language-java">${rule.secureExample?html}</code>
             </pre>
         </div>
     <#else>
@@ -736,10 +798,9 @@
         <h4>Insecure Example</h4>
         <details>
             <summary style="cursor:pointer; font-weight:bold;">Click to reveal insecure example</summary>
-            <div class="code-block-container" style="position: relative; margin-top: 1em;">
+            <div class="code-block-container">
                 <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
-                <pre class="pre" style="white-space: pre-wrap; background:#fff6f6; border-left: 4px solid #a94442; padding: 1em; border-radius: 5px;">
-<code>${rule.insecureExample?html}</code>
+                <pre class="llm-code-block insecure"><code class="language-java">${rule.insecureExample?html}</code>
                 </pre>
             </div>
         </details>
@@ -812,8 +873,8 @@
     coll[0].click();
 
     function toggleNode(element) {
-        // element is the +/- span inside the <li>
-        var li = element.parentElement;
+        // element is the +/- span inside the node wrapper
+        var li = element.closest("li");
         if (!li) return;
 
         // Find direct child <ul> (the subtree)
@@ -844,12 +905,9 @@
             for (var r = 0; r < rootLis.length; r++) {
                 var li = rootLis[r];
                 var childUl = null;
-                var toggleIcon = null;
+                var toggleIcon = li.querySelector(".tree-node-wrap > .toggle-icon");
                 for (var c = 0; c < li.children.length; c++) {
                     var el = li.children[c];
-                    if (el.classList && el.classList.contains("toggle-icon")) {
-                        toggleIcon = el;
-                    }
                     if (el.tagName && el.tagName.toLowerCase() === "ul") {
                         childUl = el;
                     }
@@ -973,8 +1031,9 @@
         });
     }
 
-    function expandAllTrees() {
-        var trees = document.querySelectorAll("ul.tree");
+    function expandAllTrees(scope) {
+        var root = scope || document;
+        var trees = root.querySelectorAll("ul.tree");
         for (var t = 0; t < trees.length; t++) {
             var uls = trees[t].querySelectorAll("ul");
             for (var u = 0; u < uls.length; u++) {
@@ -989,8 +1048,22 @@
         }
     }
 
-    function collapseAllTrees() {
-        var trees = document.querySelectorAll("ul.tree");
+    function toggleAllTrees(button) {
+        if (!button) return;
+        var scope = button.closest(".content") || document;
+        var isExpanded = button.textContent.trim() === "Collapse";
+        if (isExpanded) {
+            collapseAllTrees(scope);
+            button.textContent = "Expand";
+        } else {
+            expandAllTrees(scope);
+            button.textContent = "Collapse";
+        }
+    }
+
+    function collapseAllTrees(scope) {
+        var root = scope || document;
+        var trees = root.querySelectorAll("ul.tree");
         for (var t = 0; t < trees.length; t++) {
             var uls = trees[t].querySelectorAll("ul");
             for (var u = 0; u < uls.length; u++) {
@@ -1024,4 +1097,3 @@
 </script>
 </body>
 </html>
-
