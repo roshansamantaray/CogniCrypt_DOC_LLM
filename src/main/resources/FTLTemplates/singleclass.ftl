@@ -408,6 +408,99 @@
             font-size: 0.95rem !important;
             line-height: 1.4 !important;
         }
+
+        /* Render LLM markdown as normal flow text (avoid preserving extra blank lines). */
+        #llm-md,
+        #llm-md-en,
+        #llm-md-pt,
+        #llm-md-de,
+        #llm-md-fr {
+            white-space: normal !important;
+            line-height: 1.55 !important;
+        }
+
+        #llm-md h1,
+        #llm-md h2,
+        #llm-md h3,
+        #llm-md h4,
+        #llm-md h5,
+        #llm-md h6,
+        #llm-md-en h1,
+        #llm-md-en h2,
+        #llm-md-en h3,
+        #llm-md-en h4,
+        #llm-md-en h5,
+        #llm-md-en h6,
+        #llm-md-pt h1,
+        #llm-md-pt h2,
+        #llm-md-pt h3,
+        #llm-md-pt h4,
+        #llm-md-pt h5,
+        #llm-md-pt h6,
+        #llm-md-de h1,
+        #llm-md-de h2,
+        #llm-md-de h3,
+        #llm-md-de h4,
+        #llm-md-de h5,
+        #llm-md-de h6,
+        #llm-md-fr h1,
+        #llm-md-fr h2,
+        #llm-md-fr h3,
+        #llm-md-fr h4,
+        #llm-md-fr h5,
+        #llm-md-fr h6 {
+            margin: 0.75em 0 0.45em !important;
+        }
+
+        /* Keep markdown block spacing compact and consistent across languages. */
+        #llm-md p,
+        #llm-md-en p,
+        #llm-md-pt p,
+        #llm-md-de p,
+        #llm-md-fr p {
+            margin: 0.65em 0 !important;
+        }
+
+        #llm-md ul,
+        #llm-md ol,
+        #llm-md-en ul,
+        #llm-md-en ol,
+        #llm-md-pt ul,
+        #llm-md-pt ol,
+        #llm-md-de ul,
+        #llm-md-de ol,
+        #llm-md-fr ul,
+        #llm-md-fr ol {
+            margin: 0.6em 0 0.9em 1.25em !important;
+            padding-left: 1.1em !important;
+        }
+
+        #llm-md li,
+        #llm-md-en li,
+        #llm-md-pt li,
+        #llm-md-de li,
+        #llm-md-fr li {
+            margin: 0.35em 0 !important;
+        }
+
+        #llm-md li p,
+        #llm-md-en li p,
+        #llm-md-pt li p,
+        #llm-md-de li p,
+        #llm-md-fr li p {
+            margin: 0.3em 0 !important;
+        }
+
+        /* Preserve readability for markdown code blocks inside explanations. */
+        #llm-md pre,
+        #llm-md-en pre,
+        #llm-md-pt pre,
+        #llm-md-de pre,
+        #llm-md-fr pre {
+            white-space: pre-wrap !important;
+            overflow-x: auto !important;
+            margin: 0.7em 0 !important;
+        }
     </style>
 </head>
 
@@ -672,7 +765,7 @@
     </div>
 
     <p class="help">
-        <strong>Disclaimer:</strong> This documentation is automatically generated from a formal behavioral specification. It reflects the defined method usage rules and constraints. Explanatory notes and security-related guidance are provided for clarity and are not formal guarantees beyond the specification itself.
+        <strong>Disclaimer:</strong> This documentation is automatically generated from a CrySL specification. It reflects the defined method usage rules and constraints. Explanatory notes and security-related guidance are provided for clarity and are not formal guarantees beyond the specification itself.
     </p>
 
     <div class="language-selector">
@@ -687,7 +780,7 @@
 
     <div id="llm-explanation-English" class="llm-explanation" style="display:block;">
         <#if rule.llmExplanation["English"]?? && rule.llmExplanation["English"]?has_content>
-            <div id="llm-md-en" style="white-space: pre-wrap;">${rule.llmExplanation["English"]?html}</div>
+            <div id="llm-md-en">${rule.llmExplanation["English"]?html}</div>
         <#else>
             <p><em>No LLM explanation available for English.</em></p>
         </#if>
@@ -695,7 +788,7 @@
 
     <div id="llm-explanation-Portuguese" class="llm-explanation">
         <#if rule.llmExplanation["Portuguese"]?? && rule.llmExplanation["Portuguese"]?has_content>
-            <div id="llm-md-pt" style="white-space: pre-wrap;">${rule.llmExplanation["Portuguese"]?html}</div>
+            <div id="llm-md-pt">${rule.llmExplanation["Portuguese"]?html}</div>
         <#else>
             <p><em>No LLM explanation available for Portuguese.</em></p>
         </#if>
@@ -704,7 +797,7 @@
 
     <div id="llm-explanation-German" class="llm-explanation">
         <#if rule.llmExplanation["German"]?? && rule.llmExplanation["German"]?has_content>
-            <div id="llm-md-de" style="white-space: pre-wrap;">${rule.llmExplanation["German"]?html}</div>
+            <div id="llm-md-de">${rule.llmExplanation["German"]?html}</div>
         <#else>
             <p><em>No LLM explanation available for German.</em></p>
         </#if>
@@ -713,7 +806,7 @@
     <!-- French container -->
     <div id="llm-explanation-French" class="llm-explanation">
         <#if rule.llmExplanation["French"]?? && rule.llmExplanation["French"]?has_content>
-            <div id="llm-md-fr" style="white-space: pre-wrap;">${rule.llmExplanation["French"]?html}</div>
+            <div id="llm-md-fr">${rule.llmExplanation["French"]?html}</div>
         <#else>
             <p><em>No LLM explanation available for French.</em></p>
         </#if>
