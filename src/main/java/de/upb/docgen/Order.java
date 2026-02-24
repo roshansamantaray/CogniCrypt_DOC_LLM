@@ -17,6 +17,8 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
+import crypto.exceptions.CryptoAnalysisException;
+import de.upb.docgen.crysl.CrySLReader;
 import org.apache.commons.lang3.StringUtils;
 
 import crypto.rules.CrySLRule;
@@ -35,6 +37,9 @@ public class Order {
 	public static PrintWriter out;
 
 	// reading the file and adding it to map(k,v), k- event , v- content inside it
+	/**
+	 * Read a CrySL file into a map of clause name -> lines.
+	 */
 	private static Map<String, List<String>> readCryslFile(String filePath) throws IOException {
 		Map<String, List<String>> cryslFileContentMap = new LinkedHashMap<>();
 		String contentCategory = null;
@@ -62,16 +67,37 @@ public class Order {
 		return cryslFileContentMap;// contains the sections with their details
 	}
 
+	/**
+	 * Load symbol mappings from Templates/symbol.properties (disk override or JAR fallback).
+	 */
 	private static Map<String, String> getSymValues() throws IOException {
 		Properties properties = new Properties();
 
-		try {
-			File fileone = new File(DocSettings.getInstance().getLangTemplatesPath() + "/symbol.properties");
-			FileInputStream fileInput = new FileInputStream(fileone);
+		File symbolPropsFile;
+
+		// IMPORTANT: Do NOT couple this decision to --rulesDir.
+		// The decision must depend ONLY on --langTemplatesPath.
+		String langTemplatesPath = DocSettings.getInstance().getLangTemplatesPath();
+		if (langTemplatesPath != null && !langTemplatesPath.trim().isEmpty()) {
+			symbolPropsFile = new File(langTemplatesPath, "symbol.properties");
+			if (!symbolPropsFile.isFile()) {
+				throw new FileNotFoundException(
+						"symbol.properties not found at --langTemplatesPath: " + symbolPropsFile.getAbsolutePath()
+								+ " (either fix the path or omit --langTemplatesPath to use bundled defaults)"
+				);
+			}
+		} else {
+			// bundled fallback (works even if user passed --rulesDir but omitted --langTemplatesPath)
+			symbolPropsFile = CrySLReader.readSymbolPropertiesFromJar();
+			if (symbolPropsFile == null || !symbolPropsFile.isFile()) {
+				throw new FileNotFoundException(
+						"Bundled Templates/symbol.properties not found in resources/JAR (expected Templates/symbol.properties)"
+				);
+			}
+		}
+
+		try (FileInputStream fileInput = new FileInputStream(symbolPropsFile)) {
 			properties.load(fileInput);
-			fileInput.close();
-		} catch (FileNotFoundException e) {
-			e.printStackTrace();
 		}
 
 		symbolMap.putAll(properties.entrySet().stream()
@@ -80,6 +106,10 @@ public class Order {
 	}
 
 
+
+	/**
+	 * Parse EVENT definitions into a list of Event objects and cache a label -> method map.
+	 */
 	private static List<Event> processEvents(List<String> lines) {
 		List<Event> eventList = new ArrayList<>();
 		Map<String, String> methodIdentifiersmap = new LinkedHashMap<>();
@@ -307,6 +337,9 @@ public class Order {
 		return eventList;
 	}
 
+	/**
+	 * Cache a processed label -> method string for quick lookup.
+	 */
 	private static void getProcessedMap(List<Event> eventList) {
 		eventList.forEach(event -> {
 			processedresultMap.put(event.getEvent(), event.getMethodIdentifierMap());
@@ -314,37 +347,82 @@ public class Order {
 	}
 
 
-	public List<String> runOrder(CrySLRule file) throws IOException {
-		String filePath = DocSettings.getInstance().getRulesetPathDir();
-		filePath += File.separator + file.getClassName().substring(file.getClassName().lastIndexOf(".") + 1) + ".crysl";
-		Map<String, List<String>> fileContent = readCryslFile(filePath);
-		List<String> objectList = fileContent.get("OBJECTS");
+	/**
+	 * Build the natural-language ORDER description for a CrySL rule.
+	 * Reads the rule file, resolves symbols, and renders order sentences.
+	 */
+	public List<String> runOrder(CrySLRule file) throws IOException, CryptoAnalysisException {
 
-		for (String pair : objectList) {
-			String[] entry = pair.split(" ");
-			objectMap.put(entry[1], entry[0]);
+		if (file == null) {
+			throw new IllegalArgumentException("CrySLRule cannot be null");
 		}
 
-		processEvents(fileContent.get("EVENTS"));
+		try {
+			Map<String, List<String>> fileContent;
 
-		List<String> originalOrder = Arrays
-				.asList(fileContent.get("ORDER").get(0).replaceAll("\\(", "\\( ").split(","));
-		getSymValues();
-		List<String> orderSplittedWithBrackets = connectBrackets(originalOrder);
+			String simpleName = file.getClassName().substring(file.getClassName().lastIndexOf(".") + 1);
+			String rulesDir = DocSettings.getInstance().getRulesetPathDir();
 
-		ArrayList<String> allNLsentences = parseOrderToNL(orderSplittedWithBrackets);
+			// if --rulesDir isn't provided, read the CrySL rule from bundled JAR resources
+			if (rulesDir != null && !rulesDir.trim().isEmpty()) {
+				String filePath = rulesDir + File.separator + simpleName + ".crysl";
+				fileContent = readCryslFile(filePath);
+			} else {
+				File rule = CrySLReader.readRuleFromJarFile(simpleName);
+				if (rule == null || !rule.isFile()) {
+					throw new FileNotFoundException(
+							"Bundled CrySL rule not found for: " + simpleName
+									+ " (expected /CrySLRules/" + simpleName + ".crysl)"
+					);
+				}
+				fileContent = readCryslFile(rule.getPath());
+			}
 
-		List<String> resolvedSentences = aggrgatesToMethods(allNLsentences);
+			// OBJECTS can be missing in some rules — avoid NPE
+			List<String> objectList = fileContent.get("OBJECTS");
+			if (objectList != null) {
+				for (String pair : objectList) {
+					String[] entry = pair.split(" ");
+					if (entry.length >= 2) {
+						objectMap.put(entry[1], entry[0]);
+					}
+				}
+			}
 
-		List<String> orderConstructed = combineAndIndentation(resolvedSentences);
+			List<String> events = fileContent.get("EVENTS");
+			if (events == null) {
+				throw new IOException("CrySL rule " + file.getClassName() + " is missing an EVENTS section");
+			}
+			processEvents(events);
 
-		objectMap.clear();
-		processedresultMap.clear();
-		symbolMap.clear();
+			List<String> orderLines = fileContent.get("ORDER");
+			if (orderLines == null || orderLines.isEmpty()) {
+				throw new IOException("CrySL rule " + file.getClassName() + " is missing an ORDER section");
+			}
 
-		return orderConstructed;
+			List<String> originalOrder =
+					Arrays.asList(orderLines.get(0).replaceAll("\\(", "\\( ").split(","));
+
+			getSymValues();
+
+			List<String> orderSplittedWithBrackets = connectBrackets(originalOrder);
+			ArrayList<String> allNLsentences = parseOrderToNL(orderSplittedWithBrackets);
+			List<String> resolvedSentences = aggrgatesToMethods(allNLsentences);
+			List<String> orderConstructed = combineAndIndentation(resolvedSentences);
+
+			return orderConstructed;
+
+		} finally {
+			// clear in finally so exceptions don't leak state into next rule
+			objectMap.clear();
+			processedresultMap.clear();
+			symbolMap.clear();
+		}
 	}
 
+	/**
+	 * Replace aggregate labels with the resolved method names.
+	 */
 	private List<String> aggrgatesToMethods(ArrayList<String> allNLsentences) {
 		List<String> n = new ArrayList<>();
 		for (String ff : allNLsentences) {
@@ -364,6 +442,9 @@ public class Order {
 		return n;
 	}
 
+	/**
+	 * Combine sentences and apply indentation based on parentheses/alternatives.
+	 */
 	private List<String> combineAndIndentation(List<String> n) {
 		List<String> fo = new ArrayList<>();
 		String a = "";
@@ -418,6 +499,9 @@ public class Order {
 		return fo;
 	}
 
+	/**
+	 * Convert the ORDER clause to natural-language tokens using symbol mappings.
+	 */
 	private ArrayList<String> parseOrderToNL(List<String> test) {
 		ArrayList<String> fl = new ArrayList<>();
 		boolean added = false;
@@ -464,6 +548,9 @@ public class Order {
 		return fl;
 	}
 
+	/**
+	 * Decide the call frequency text for a bracketed group (e.g., *, +, ?).
+	 */
 	private String decideSymbolOfBracket(String decided, int toIgnore) {
 		int totalCounter = 0;
 		boolean breakof = false;
@@ -509,11 +596,17 @@ public class Order {
 		return decided;
 	}
 
+	/**
+	 * Merge tokens inside matching parentheses into a single token string.
+	 */
 	private List<String> connectBrackets(List<String> fo) {
 		StringBuilder sb = new StringBuilder();
 		List<String> connected = new ArrayList<>();
+
 		for (int i = 0; i < fo.size(); i++) {
 			if (fo.get(i).contains("(")) {
+
+				sb.setLength(0); // IMPORTANT: reset for each new bracket group
 
 				int bracketcounter = 0;
 				int j = i;
@@ -522,14 +615,13 @@ public class Order {
 				}
 				for (j = i; j < fo.size(); ++j) {
 					if (bracketcounter == 0) {
-
 						break;
 					}
 					bracketcounter -= fo.get(j).chars().filter(ch -> ch == ')').count();
-					sb.append(fo.get(j) + " ");
+					sb.append(fo.get(j)).append(" ");
 				}
 				connected.add(sb.toString());
-				i = j;
+				i = j - 1; // so that the outer for-loop's i++ moves to j (the next unprocessed token)
 
 			} else {
 				connected.add(fo.get(i));
@@ -543,18 +635,30 @@ class Event {
 	public String event;
 	public Map<String, String> methodIdentifierMap = new HashMap<>();
 
+	/**
+	 * Create an event with the given label.
+	 */
 	public Event(String event) {
 		this.event = event;
 	}
 
+	/**
+	 * Add a label -> method mapping for this event.
+	 */
 	public void addIdentifierAndMethod(String id, String method) {
 		methodIdentifierMap.put(id, method);
 	}
 
+	/**
+	 * Return the event label.
+	 */
 	public String getEvent() {
 		return event;
 	}
 
+	/**
+	 * Return a display string for the event's method identifiers.
+	 */
 	public String getMethodIdentifierMap() {
 		return methodIdentifierMap.values().toString().replaceAll(",(?=[^\\)]*(?:\\(|$))", " or")
 				.replaceFirst("[\\[\\]]", "").replaceFirst("\\]$", "");

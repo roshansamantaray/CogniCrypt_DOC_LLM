@@ -20,6 +20,9 @@ import org.apache.commons.lang3.StringUtils;
 
 public class FunctionUtils {
 
+	/**
+	 * Extract distinct method signatures from the rule's state machine (raw labels).
+	 */
 	public static List<String> getEventNames(CrySLRule rule) {
 		List<String> methodNames = new ArrayList<String>();
 		StateMachineGraph graph = rule.getUsagePattern();
@@ -36,6 +39,9 @@ public class FunctionUtils {
 		return methodNames.stream().distinct().collect(Collectors.toList());
 	}
 
+	/**
+	 * Extract distinct method signatures using parameter variable names as placeholders.
+	 */
 	public static List<String> getEventNamesKey(CrySLRule rule) {
 		List<String> methodNames = new ArrayList<String>();
 		StateMachineGraph graph = rule.getUsagePattern();
@@ -61,6 +67,9 @@ public class FunctionUtils {
 		return methodNames.stream().distinct().collect(Collectors.toList());
 	}
 
+	/**
+	 * Extract distinct method signatures using parameter types (values) for display.
+	 */
 	public static List<String> getEventNamesValue(CrySLRule rule) {
 		List<String> methodNames = new ArrayList<String>();
 		StateMachineGraph graph = rule.getUsagePattern();
@@ -86,6 +95,9 @@ public class FunctionUtils {
 		return methodNames.stream().distinct().collect(Collectors.toList());
 	}
 
+	/**
+	 * Build a method signature with parameter variable names.
+	 */
 	public static String getEventCrySLMethodKey(CrySLMethod method) {
 		StringBuilder sb = new StringBuilder();
 		String methodName = method.getShortMethodName();
@@ -100,6 +112,9 @@ public class FunctionUtils {
 		return sb.toString();
 	}
 
+	/**
+	 * Build a method signature with parameter types, substituting AnyType with '_'.
+	 */
 	public static String getEventCrySLMethodValue(CrySLMethod method) {
 		StringBuilder sb = new StringBuilder();
 		String methodName = method.getShortMethodName();
@@ -119,6 +134,9 @@ public class FunctionUtils {
 		return sb.toString();
 	}
 
+	/**
+	 * Map numeric parameter positions to human-readable words.
+	 */
 	public static Map<String, String> getPosWordMap(CrySLRule rule) {
 
 		Map<String, String> posInWords = new HashMap<>();
@@ -134,6 +152,9 @@ public class FunctionUtils {
 
 	}
 
+	/**
+	 * Resolve the declared type for a parameter or return variable within a rule.
+	 */
 	public static String getDataType(CrySLRule rule, String var) {
 		ArrayList<TransitionEdge> transitions = new ArrayList<TransitionEdge>(
 				rule.getUsagePattern().getAllTransitions());

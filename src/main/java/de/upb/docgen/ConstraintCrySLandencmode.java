@@ -27,29 +27,47 @@ public class ConstraintCrySLandencmode {
 
 	static PrintWriter out;
 
+	/**
+	 * Template for the main VC LHS clause in encmode constraints.
+	 */
 	private static String getTemplateEncLHS() throws IOException {
 		return Utils.getTemplatesTextString("ConstraintCrySLVCandEncmodeLHS1Clause");
 
 	}
 
+	/**
+	 * Template for the LHS sub-clause when encmode requires a specific call.
+	 */
 	private static String getTemplateEncCallLHS2() throws IOException {
 		return Utils.getTemplatesTextString("ConstraintCrySLVCandEncmodeCallLHS2Clause");
 	}
 
+	/**
+	 * Template for the RHS call(...) clause.
+	 */
 	private static String getTemplateEncCallRHS() throws IOException {
 		return Utils.getTemplatesTextString("ConstraintCrySLVCandEncmodeCallRHSClause");
 	}
 
+	/**
+	 * Template for the LHS sub-clause when encmode requires noCall(...).
+	 */
 	private static String getTemplateEncNoCallLHS2() throws IOException {
 		return Utils.getTemplatesTextString("ConstraintCrySLVCandEncmodeNocallLHS2Clause");
 
 	}
 
+	/**
+	 * Template for the RHS noCall(...) clause.
+	 */
 	private static String getTemplateEncNoCallRHS() throws IOException {
 		return Utils.getTemplatesTextString("ConstraintCrySLVCandEncmodeNocallLRHSClause");
 
 	}
 
+	/**
+	 * Minimal word map for converting numeric positions to words.
+	 */
 	private static Map<String, String> getwordMap(CrySLRule rule) {
 
 		Map<String, String> posInWords = new HashMap<>();
@@ -60,6 +78,11 @@ public class ConstraintCrySLandencmode {
 
 	}
 
+	/**
+	 * Build formatted constraints for VC + encmode rules.
+	 * Parses LHS (value constraints + encmode condition) and RHS (call/noCall) clauses,
+	 * then renders them using the encmode templates.
+	 */
 	public ArrayList<String> getConCryslandenc(CrySLRule rule) throws IOException {
 		ArrayList<String> composedConAndEnc = new ArrayList<>();
 
@@ -105,7 +128,7 @@ public class ConstraintCrySLandencmode {
 					for (int i = 0; i <= LHSList.size() - 1; i++) {
 
 						if (i < 1) {
-
+							// First LHS predicate: map var to method/position and render base LHS template.
 							String a = LHSList.get(i);
 							List<String> resLHSList = new ArrayList<>();
 							resLHSList = new ArrayList<>(Arrays.asList(a.replaceAll("\\(.*\\)", "")
@@ -185,6 +208,7 @@ public class ConstraintCrySLandencmode {
 							resultmainstringLHS = sub.replace(b);
 
 						} else {
+							// Additional LHS predicates: encode encmode conditions and append with "and".
 							String d = "and";
 							String a = LHSList.get(i);
 							String b = "";
@@ -416,6 +440,9 @@ public class ConstraintCrySLandencmode {
 		return composedConAndEnc;
 	}
 
+	/**
+	 * Extract method signatures from a call/noCall string.
+	 */
 	public static ArrayList<String> extractMethodSignatures(String input) {
 		ArrayList<String> methodSignatures = new ArrayList<>();
 
@@ -429,6 +456,9 @@ public class ConstraintCrySLandencmode {
 		return methodSignatures;
 	}
 
+	/**
+	 * Extract the parameter substring from a method signature.
+	 */
 	public static String extractMethodParameters(String methodSignature) {
 		// Define a regular expression to match parameters
 		String regex = "\\((.*?)\\)";

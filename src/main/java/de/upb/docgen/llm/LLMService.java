@@ -1,113 +1,3 @@
-//package de.upb.docgen.llm;
-//
-//import java.io.*;
-//import java.nio.charset.StandardCharsets;
-//import java.nio.file.Files;
-//import java.nio.file.Path;
-//import java.nio.file.Paths;
-//import java.util.*;
-//import com.google.gson.Gson;
-//import de.upb.docgen.utils.Utils;
-//
-///**
-// * @author Roshan Samantaray
-// **/
-//
-//public class LLMService {
-//
-//    private static final String pythonPath = "llm/.venv/Scripts/python.exe";
-//
-//    public static Map<String, String> getLLMExplanation(Map<String, String> cryslData, List<String> LANGUAGES) throws IOException {
-//        Gson gson = new Gson();
-//        String pythonScriptPath = "llm/llm_writer.py";
-//        Map<String, String> result = new HashMap<>();
-//
-//        Path base = Paths.get("llm");
-//        Path tempFolder = base.resolve("temp_rules");
-//        Path sanitizedFolder = base.resolve("sanitized_rules");
-//        Files.createDirectories(base);
-//        Files.createDirectories(tempFolder);
-//        Files.createDirectories(sanitizedFolder);
-//
-//        Path cacheFolder = Paths.get("C:\\Users\\rosha\\Documents\\CogniCrypt_DOC_LLM\\CogniCrypt_DOC_LLM\\Output\\resources\\llm_cache");
-//        Files.createDirectories(cacheFolder);
-//
-//        for (String lang: LANGUAGES) {
-//            cryslData.put("explanationLanguage", lang);
-//
-//            String className = cryslData.get("className");
-//            String classNameSafe = className.replaceAll("[^a-zA-Z0-9.\\-]", "_");
-//            String json = gson.toJson(cryslData);
-//            Path tempIn = tempFolder.resolve("temp_rule_" + classNameSafe + "_" + lang + ".json");
-//            if (!Files.exists(tempIn)) {
-//                try (OutputStreamWriter writer = new OutputStreamWriter(Files.newOutputStream(tempIn), StandardCharsets.UTF_8)) {
-//                    writer.write(json);
-//                }
-//            }
-//            Path sanitizedOut = sanitizedFolder.resolve("sanitized_rule_" + className + "_" + lang + ".json");
-//            if (!Files.exists(sanitizedOut)) {
-//                Utils.sanitizeRuleFileSecure(tempIn, sanitizedOut, base);
-//            }
-//
-//            Path cacheFile = cacheFolder.resolve(className + "_" + lang + ".txt");
-//            if (Files.exists(cacheFile)) {
-//                String cached = Files.readString(cacheFile, StandardCharsets.UTF_8);
-//                result.put(lang, cached.trim());
-//                continue; // skip Python process
-//            }
-//
-//            ProcessBuilder pb = new ProcessBuilder(
-//                    pythonPath,
-//                    pythonScriptPath,
-//                    className,
-//                    lang
-//            );
-//            File projectRoot = new File("C:\\Users\\rosha\\Documents\\CogniCrypt_DOC_LLM\\CogniCrypt_DOC_LLM");
-//            pb.directory(projectRoot);
-//            pb.redirectErrorStream(true);
-//
-//            Process process = pb.start();
-//            try (BufferedReader reader =
-//                         new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-//                StringBuilder output = new StringBuilder();
-//                String line;
-//                while ((line = reader.readLine()) != null) {
-//                    output.append(line).append('\n');
-//                }
-//                result.put(lang, output.toString().trim());
-//            }
-//        }
-//        return result;
-//    }
-//
-//    public static String getLLMExample(Map<String, String> cryslData, String type) throws IOException {
-//        cryslData.put("exampleType", type);
-//        Gson gson = new Gson();
-//        String json = gson.toJson(cryslData);
-//
-//        String tempFilePath = "llm/temp_example_" + type +".json";
-//        try (FileWriter writer = new FileWriter(tempFilePath)) {
-//            writer.write(json);
-//        }
-//
-//        String pythonScriptPath = "llm/llm_code_writer_"+ type + ".py";
-//        ProcessBuilder pb = new ProcessBuilder(pythonPath, pythonScriptPath, tempFilePath);
-//        pb.redirectErrorStream(true);
-//
-//        Process process = pb.start();
-//
-//        BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-//        StringBuilder output = new StringBuilder();
-//        String line;
-//        while ((line = reader.readLine()) != null) {
-//            output.append(line).append("\n");
-//        }
-//        return output.toString().trim();
-//    }
-//
-//}
-
-// java
 package de.upb.docgen.llm;
 
 import java.io.*;
@@ -126,15 +16,22 @@ import de.upb.docgen.utils.Utils;
 
 public class LLMService {
 
+    // Resolve project-relative paths for the LLM sidecar scripts and caches.
     private static final Path PROJECT_ROOT = Paths.get(System.getProperty("user.dir"));
     private static final Path VENV_PY_UNIX = PROJECT_ROOT.resolve(Paths.get("llm", ".venv", "bin", "python"));
     private static final Path VENV_PY_WIN  = PROJECT_ROOT.resolve(Paths.get("llm", ".venv", "Scripts", "python.exe"));
 
+    /**
+     * Detect whether the current OS is Windows for Python fallback selection.
+     */
     private static boolean isWindows() {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         return os.contains("win");
     }
 
+    /**
+     * Resolve the Python executable, preferring the project venv if present.
+     */
     private static String resolvePythonExecutable() {
         if (Files.isExecutable(VENV_PY_UNIX)) {
             return VENV_PY_UNIX.toString();
@@ -145,11 +42,16 @@ public class LLMService {
         return isWindows() ? "python" : "python3";
     }
 
+    /**
+     * Generate multilingual explanations via the Python LLM sidecar with caching.
+     */
     public static Map<String, String> getLLMExplanation(Map<String, String> cryslData, List<String> LANGUAGES, String backend) throws IOException {
         Gson gson = new Gson();
+        // Choose backend-specific Python script.
         String pythonScriptPath = backend.equalsIgnoreCase("openai") ? "llm/llm_writer.py" : "llm/llm_writer_ollama.py";
         Map<String, String> result = new HashMap<>();
 
+        // Prepare temp/sanitized folders under llm/.
         Path base = PROJECT_ROOT.resolve("llm");
         Path tempFolder = base.resolve("temp_rules");
         Path sanitizedFolder = base.resolve("sanitized_rules");
@@ -157,12 +59,14 @@ public class LLMService {
         Files.createDirectories(tempFolder);
         Files.createDirectories(sanitizedFolder);
 
+        // Cache folder for explanation outputs.
         Path cacheFolder = PROJECT_ROOT.resolve("Output").resolve("resources").resolve("llm_cache");
         Files.createDirectories(cacheFolder);
 
         String pythonPath = resolvePythonExecutable();
 
         for (String lang: LANGUAGES) {
+            // Add language to the payload and create a sanitized JSON input.
             cryslData.put("explanationLanguage", lang);
 
             String className = cryslData.get("className");
@@ -179,6 +83,7 @@ public class LLMService {
                 Utils.sanitizeRuleFileSecure(tempIn, sanitizedOut, base);
             }
 
+            // Use cached explanation if available.
             Path cacheFile = cacheFolder.resolve(classNameSafe + "_" + lang + ".txt");
             if (Files.exists(cacheFile)) {
                 String cached = Files.readString(cacheFile, StandardCharsets.UTF_8);
@@ -186,6 +91,7 @@ public class LLMService {
                 continue; // skip Python process
             }
 
+            // Spawn the Python process for the selected backend.
             ProcessBuilder pb = new ProcessBuilder(
                     pythonPath,
                     pythonScriptPath,
@@ -207,6 +113,7 @@ public class LLMService {
                 }
             }
 
+            // Enforce a time limit for LLM calls.
             try {
                 boolean finished = process.waitFor(60, TimeUnit.SECONDS);
                 if (!finished) {
@@ -235,7 +142,11 @@ public class LLMService {
         return result;
     }
 
+    /**
+     * Generate a secure or insecure example via the Python sidecar.
+     */
     public static String getLLMExample(Map<String, String> cryslData, String type) throws IOException {
+        // Mark the request type (secure/insecure) and write a temp JSON input.
         cryslData.put("exampleType", type);
         Gson gson = new Gson();
         String json = gson.toJson(cryslData);
@@ -246,9 +157,19 @@ public class LLMService {
             writer.write(json);
         }
 
+        // Call the Python generator for the example type.
         String pythonScriptPath = "llm/llm_code_writer_" + type + ".py";
         String pythonPath = resolvePythonExecutable();
-        ProcessBuilder pb = new ProcessBuilder(pythonPath, pythonScriptPath, tempFile.toString());
+        String rulesDir = Paths.get("src", "main", "resources", "CrySLRules")
+                .toAbsolutePath()
+                .toString();
+
+        ProcessBuilder pb = new ProcessBuilder(
+                pythonPath,
+                pythonScriptPath,
+                tempFile.toString(),
+                "--rules-dir", rulesDir
+        );
         pb.directory(PROJECT_ROOT.toFile());
         pb.redirectErrorStream(true);
 
@@ -261,6 +182,7 @@ public class LLMService {
             }
         }
 
+        // Enforce a time limit for example generation.
         try {
             boolean finished = process.waitFor(60, TimeUnit.SECONDS);
             if (!finished) {
@@ -280,4 +202,3 @@ public class LLMService {
     }
 
 }
-

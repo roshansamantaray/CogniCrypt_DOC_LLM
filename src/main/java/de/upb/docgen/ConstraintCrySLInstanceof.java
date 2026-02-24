@@ -27,14 +27,24 @@ public class ConstraintCrySLInstanceof {
 
 	static PrintWriter out;
 
+	/**
+	 * Load the template for the instanceof constraint LHS.
+	 */
 	private static String getTemplateinstanceofLHS() throws IOException {
 		return Utils.getTemplatesTextString("ConstraintCrySLinstanceofClauseLHS");
 	}
 
+	/**
+	 * Load the template for the instanceof constraint RHS.
+	 */
 	private static String getTemplateinstanceofRHS() throws IOException {
 		return Utils.getTemplatesTextString("ConstraintCrySLinstanceofClauseRHS");
 	}
 
+	/**
+	 * Build formatted instanceof constraints for a rule by mapping predicate
+	 * parameters back to method signatures and positions.
+	 */
 	public ArrayList<String> getInstanceof(CrySLRule rule) throws IOException {
 		ArrayList<String> composedInstaceOf = new ArrayList<>();
 		List<ISLConstraint> constraintConList = rule.getConstraints().stream()
@@ -361,12 +371,17 @@ public class ConstraintCrySLInstanceof {
 		return composedInstaceOf;
 	}
 
+	/**
+	 * Collect all leaf constraints in a constraint tree (predicates or value constraints).
+	 */
 	public List<ISLConstraint> getAllLeafNodes(List<ISLConstraint> leafNodes, ISLConstraint node) {
 		collectLeafNodes(node, leafNodes);
 		return leafNodes;
 	}
 
-	// Helper method to recursively collect leaf nodes
+	/**
+	 * Recursively traverse a constraint tree and accumulate leaf nodes.
+	 */
 	private void collectLeafNodes(ISLConstraint node, List<ISLConstraint> leafNodes) {
 		if (node instanceof CrySLConstraint) {
 			CrySLConstraint crySLNode = (CrySLConstraint) node;

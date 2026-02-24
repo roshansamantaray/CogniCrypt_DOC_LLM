@@ -2,11 +2,23 @@ package de.upb.docgen.utils;
 
 import java.util.*;
 
+/**
+ * GraphVerification provides static methods to verify the ordering of nodes
+ * in a graph and to detect strongly connected components (SCCs) using Tarjan's algorithm.
+ */
 public final class GraphVerification {
 
+    /**
+     * Utility class: prevent instantiation.
+     */
     private GraphVerification() {}
 
+    /**
+     * Verify that a leaf-to-root topological order ends at the requested start node
+     * and report whether the start node still sits inside a non-trivial SCC.
+     */
     public static void verifyOrdering(String param, Map<String, Set<String>> sanitizedAdj) {
+        // Compute ordering from providers (leaves) up to the consumer (start).
         String start = param;
         List<String> order = Utils.leafToRootOrderTopo(start, sanitizedAdj);
         System.out.println("Order size=" + order.size());
@@ -15,6 +27,7 @@ public final class GraphVerification {
             throw new IllegalStateException(start + " is not last; ordering still off.");
         }
 
+        // Build the set of nodes reachable from start (following provider edges).
         Map<String, Set<String>> g = sanitizedAdj;
         Set<String> nodes = new HashSet<>();
         Deque<String> stack = new ArrayDeque<>();
@@ -27,6 +40,7 @@ public final class GraphVerification {
             }
         }
 
+        // Run Tarjan SCC on the reachable subgraph to detect remaining cycles.
         List<Set<String>> sccs = new ArrayList<>();
         Map<String, Integer> idx = new HashMap<>();
         Map<String, Integer> low = new HashMap<>();
@@ -40,6 +54,7 @@ public final class GraphVerification {
             }
         }
 
+        // Report whether the start node is in a trivial or cyclic SCC.
         for (Set<String> comp : sccs) {
             if (comp.contains(start)) {
                 if (comp.size() == 1) {
@@ -51,6 +66,9 @@ public final class GraphVerification {
         }
     }
 
+    /**
+     * Tarjan DFS step: computes index/lowlink and emits an SCC when a root is found.
+     */
     private static void tarjan(String v,
                                Map<String, Set<String>> g,
                                Map<String, Integer> idx,
@@ -59,6 +77,7 @@ public final class GraphVerification {
                                Set<String> on,
                                int[] id,
                                List<Set<String>> sccs) {
+        // Assign discovery index and initialize lowlink.
         idx.put(v, id[0]);
         low.put(v, id[0]);
         id[0]++;
@@ -66,13 +85,16 @@ public final class GraphVerification {
         on.add(v);
         for (String w : g.getOrDefault(v, Set.of())) {
             if (!idx.containsKey(w)) {
+                // Tree edge: explore and propagate lowlink.
                 tarjan(w, g, idx, low, stack, on, id, sccs);
                 low.put(v, Math.min(low.get(v), low.get(w)));
             } else if (on.contains(w)) {
+                // Back edge to an active node: update lowlink.
                 low.put(v, Math.min(low.get(v), idx.get(w)));
             }
         }
         if (Objects.equals(low.get(v), idx.get(v))) {
+            // v is the root of an SCC; pop until v is removed.
             Set<String> comp = new TreeSet<>();
             String x;
             do {

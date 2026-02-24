@@ -8,7 +8,42 @@
         * {
             font-family: "Source Sans Pro", "Helvetica Neue", Arial, sans-serif;
         }
+        .toggle-icon {
+            cursor: pointer;
+            user-select: none;
+            display: inline-block;
+            width: 18px;
+            text-align: center;
+            position: absolute !important;
+            left: 0;
+            margin: 0 !important;
+            top: 50%;
+            transform: translateY(-50%);
 
+            /* prevent it from looking like a node-box */
+            border: none !important;
+            border-radius: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            line-height: 1;
+        }
+
+        /* keep alignment for leaf nodes (empty toggle icon) */
+        .toggle-icon.is-placeholder {
+            visibility: hidden;
+            pointer-events: none;
+        }
+
+        /* kill the connector "stem" coming from .tree span:before */
+        .toggle-icon:before {
+            content: none !important;
+            display: none !important;
+        }
+
+        .tree-node a {
+            text-decoration: none;
+            color: inherit;
+        }
         .tree,
         .tree ul,
         .tree li {
@@ -36,6 +71,7 @@
             display: table-cell;
             padding: .5em 0;
             vertical-align: top;
+            text-align: center;
         }
 
         .tree li:before {
@@ -55,19 +91,27 @@
             right: 50%;
         }
 
+        .tree-node-wrap {
+            display: inline-block;
+            margin: 0 .2em .5em;
+            position: relative;
+            /* reserve left space for +/- icon and right space to keep node text centered */
+            padding-left: 24px;
+            padding-right: 24px;
+        }
+
         .tree code,
-        .tree span {
+        .tree-node {
             border: solid .1em #666;
             border-radius: .2em;
             display: inline-block;
-            margin: 0 .2em .5em;
             padding: .2em .5em;
             position: relative;
         }
 
         .tree ul:before,
         .tree code:before,
-        .tree span:before {
+        .tree-node:before {
             outline: solid 1px #666;
             content: "";
             height: .5em;
@@ -80,7 +124,7 @@
         }
 
         .tree code:before,
-        .tree span:before {
+        .tree-node:before {
             top: -.55em;
         }
 
@@ -91,7 +135,7 @@
         .tree > li:before,
         .tree > li:after,
         .tree > li > code:before,
-        .tree > li > span:before {
+        .tree > li > .tree-node-wrap > .tree-node:before {
             outline: none;
         }
 
@@ -141,7 +185,20 @@
         }
 
         .fortree {
-            overflow-x: auto
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .tree-controls {
+            position: sticky;
+            left: 0;
+            top: 0;
+            z-index: 2;
+            display: flex;
+            justify-content: flex-end;
+            margin: 0.25em 0 0.5em;
+            width: 100%;
+            box-sizing: border-box;
         }
 
         .floatbutton {
@@ -178,6 +235,41 @@
         }
         .copy-btn:hover {
             background-color: #666;
+        }
+
+        .code-block-container {
+            position: relative;
+            margin-top: 0.5em;
+        }
+
+        .llm-code-block {
+            margin: 0;
+            padding: 1em;
+            border-radius: 5px;
+            border-left: 4px solid #666;
+            background: #f8f8f8;
+            overflow-x: auto;
+            white-space: pre;
+            tab-size: 4;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        .llm-code-block code {
+            display: block;
+            font-family: inherit;
+            white-space: inherit;
+        }
+
+        .llm-code-block.secure {
+            background: #f6fff6;
+            border-left-color: #3c763d;
+        }
+
+        .llm-code-block.insecure {
+            background: #fff6f6;
+            border-left-color: #a94442;
         }
 
         .spoiler {
@@ -316,6 +408,99 @@
             font-size: 0.95rem !important;
             line-height: 1.4 !important;
         }
+
+        /* Render LLM markdown as normal flow text (avoid preserving extra blank lines). */
+        #llm-md,
+        #llm-md-en,
+        #llm-md-pt,
+        #llm-md-de,
+        #llm-md-fr {
+            white-space: normal !important;
+            line-height: 1.55 !important;
+        }
+
+        #llm-md h1,
+        #llm-md h2,
+        #llm-md h3,
+        #llm-md h4,
+        #llm-md h5,
+        #llm-md h6,
+        #llm-md-en h1,
+        #llm-md-en h2,
+        #llm-md-en h3,
+        #llm-md-en h4,
+        #llm-md-en h5,
+        #llm-md-en h6,
+        #llm-md-pt h1,
+        #llm-md-pt h2,
+        #llm-md-pt h3,
+        #llm-md-pt h4,
+        #llm-md-pt h5,
+        #llm-md-pt h6,
+        #llm-md-de h1,
+        #llm-md-de h2,
+        #llm-md-de h3,
+        #llm-md-de h4,
+        #llm-md-de h5,
+        #llm-md-de h6,
+        #llm-md-fr h1,
+        #llm-md-fr h2,
+        #llm-md-fr h3,
+        #llm-md-fr h4,
+        #llm-md-fr h5,
+        #llm-md-fr h6 {
+            margin: 0.75em 0 0.45em !important;
+        }
+
+        /* Keep markdown block spacing compact and consistent across languages. */
+        #llm-md p,
+        #llm-md-en p,
+        #llm-md-pt p,
+        #llm-md-de p,
+        #llm-md-fr p {
+            margin: 0.65em 0 !important;
+        }
+
+        #llm-md ul,
+        #llm-md ol,
+        #llm-md-en ul,
+        #llm-md-en ol,
+        #llm-md-pt ul,
+        #llm-md-pt ol,
+        #llm-md-de ul,
+        #llm-md-de ol,
+        #llm-md-fr ul,
+        #llm-md-fr ol {
+            margin: 0.6em 0 0.9em 1.25em !important;
+            padding-left: 1.1em !important;
+        }
+
+        #llm-md li,
+        #llm-md-en li,
+        #llm-md-pt li,
+        #llm-md-de li,
+        #llm-md-fr li {
+            margin: 0.35em 0 !important;
+        }
+
+        #llm-md li p,
+        #llm-md-en li p,
+        #llm-md-pt li p,
+        #llm-md-de li p,
+        #llm-md-fr li p {
+            margin: 0.3em 0 !important;
+        }
+
+        /* Preserve readability for markdown code blocks inside explanations. */
+        #llm-md pre,
+        #llm-md-en pre,
+        #llm-md-pt pre,
+        #llm-md-de pre,
+        #llm-md-fr pre {
+            white-space: pre-wrap !important;
+            overflow-x: auto !important;
+            margin: 0.7em 0 !important;
+        }
     </style>
 </head>
 
@@ -443,22 +628,37 @@
             </p>
         </div>
         <div class="fortree">
-            <ul class="tree">
-                <#macro reqTree treenode>
-                    <li>
-                        <span> <a href="${treenode.data}.html">${treenode.data}</a></span>
-                        <#if treenode.children?has_content>
-                            <ul>
-                                <#list treenode.children as child>
-                                    <@reqTree child />
-                                </#list>
-                            </ul>
-                        </#if>
-                    </li>
-                </#macro>
-                <@reqTree requires />
-            </ul>
+        <div class="tree-controls">
+            <button type="button" class="tree-toggle-btn" onclick="toggleAllTrees(this)">Expand</button>
         </div>
+        <ul class="tree">
+            <#macro reqTree treenode>
+                <li>
+                    <span class="tree-node-wrap">
+                        <#if treenode.children?has_content>
+                            <span class="toggle-icon" onclick="toggleNode(this)">+</span>
+                        <#else>
+                            <span class="toggle-icon is-placeholder"></span>
+                        </#if>
+
+                        <span class="tree-node">
+                            <a href="${treenode.data}.html">${treenode.data}</a>
+                        </span>
+                    </span>
+
+                    <#if treenode.children?has_content>
+                        <ul style="display:none;">
+                            <#list treenode.children as child>
+                                <@reqTree child />
+                            </#list>
+                        </ul>
+                    </#if>
+                </li>
+            </#macro>
+
+            <@reqTree requires />
+        </ul>
+    </div>
     </div>
     <button class="collapsible">Ensures Tree</button>
     <div class="content">
@@ -474,12 +674,26 @@
             </p>
         </div>
         <div class="fortree">
+            <div class="tree-controls">
+                <button type="button" class="tree-toggle-btn" onclick="toggleAllTrees(this)">Expand</button>
+            </div>
             <ul class="tree">
                 <#macro ensTree treenode>
                     <li>
-                        <span> <a href="${treenode.data}.html">${treenode.data}</a> </span>
+                        <span class="tree-node-wrap">
+                            <#if treenode.children?has_content>
+                                <span class="toggle-icon" onclick="toggleNode(this)">+</span>
+                            <#else>
+                                <span class="toggle-icon is-placeholder"></span>
+                            </#if>
+
+                            <span class="tree-node">
+                                <a href="${treenode.data}.html">${treenode.data}</a>
+                            </span>
+                        </span>
+
                         <#if treenode.children?has_content>
-                            <ul>
+                            <ul style="display:none;">
                                 <#list treenode.children as child>
                                     <@ensTree child />
                                 </#list>
@@ -487,6 +701,7 @@
                         </#if>
                     </li>
                 </#macro>
+
                 <@ensTree ensures />
             </ul>
         </div>
@@ -549,6 +764,10 @@
         </p>
     </div>
 
+    <p class="help">
+        <strong>Disclaimer:</strong> This documentation is automatically generated from a CrySL specification. It reflects the defined method usage rules and constraints. Explanatory notes and security-related guidance are provided for clarity and are not formal guarantees beyond the specification itself.
+    </p>
+
     <div class="language-selector">
         <label for="llm-lang-select">Language:</label>
         <select id="llm-lang-select" onchange="showLLMExplanation()">
@@ -561,7 +780,7 @@
 
     <div id="llm-explanation-English" class="llm-explanation" style="display:block;">
         <#if rule.llmExplanation["English"]?? && rule.llmExplanation["English"]?has_content>
-            <div id="llm-md-en" style="white-space: pre-wrap;">${rule.llmExplanation["English"]?html}</div>
+            <div id="llm-md-en">${rule.llmExplanation["English"]?html}</div>
         <#else>
             <p><em>No LLM explanation available for English.</em></p>
         </#if>
@@ -569,7 +788,7 @@
 
     <div id="llm-explanation-Portuguese" class="llm-explanation">
         <#if rule.llmExplanation["Portuguese"]?? && rule.llmExplanation["Portuguese"]?has_content>
-            <div id="llm-md-pt" style="white-space: pre-wrap;">${rule.llmExplanation["Portuguese"]?html}</div>
+            <div id="llm-md-pt">${rule.llmExplanation["Portuguese"]?html}</div>
         <#else>
             <p><em>No LLM explanation available for Portuguese.</em></p>
         </#if>
@@ -578,7 +797,7 @@
 
     <div id="llm-explanation-German" class="llm-explanation">
         <#if rule.llmExplanation["German"]?? && rule.llmExplanation["German"]?has_content>
-            <div id="llm-md-de" style="white-space: pre-wrap;">${rule.llmExplanation["German"]?html}</div>
+            <div id="llm-md-de">${rule.llmExplanation["German"]?html}</div>
         <#else>
             <p><em>No LLM explanation available for German.</em></p>
         </#if>
@@ -587,7 +806,7 @@
     <!-- French container -->
     <div id="llm-explanation-French" class="llm-explanation">
         <#if rule.llmExplanation["French"]?? && rule.llmExplanation["French"]?has_content>
-            <div id="llm-md-fr" style="white-space: pre-wrap;">${rule.llmExplanation["French"]?html}</div>
+            <div id="llm-md-fr">${rule.llmExplanation["French"]?html}</div>
         <#else>
             <p><em>No LLM explanation available for French.</em></p>
         </#if>
@@ -659,10 +878,9 @@
 
     <#if rule.secureExample?? && rule.secureExample?has_content>
         <h4>Secure Example</h4>
-        <div class="code-block-container" style="position: relative;">
+        <div class="code-block-container">
             <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
-            <pre class="pre" style="white-space: pre-wrap; background:#f6fff6; border-left: 4px solid #3c763d; padding: 1em; border-radius: 5px;">
-<code>${rule.secureExample?html}</code>
+            <pre class="llm-code-block secure"><code class="language-java">${rule.secureExample?html}</code>
             </pre>
         </div>
     <#else>
@@ -673,10 +891,9 @@
         <h4>Insecure Example</h4>
         <details>
             <summary style="cursor:pointer; font-weight:bold;">Click to reveal insecure example</summary>
-            <div class="code-block-container" style="position: relative; margin-top: 1em;">
+            <div class="code-block-container">
                 <button class="copy-btn" onclick="copyToClipboard(this)">Copy</button>
-                <pre class="pre" style="white-space: pre-wrap; background:#fff6f6; border-left: 4px solid #a94442; padding: 1em; border-radius: 5px;">
-<code>${rule.insecureExample?html}</code>
+                <pre class="llm-code-block insecure"><code class="language-java">${rule.insecureExample?html}</code>
                 </pre>
             </div>
         </details>
@@ -736,6 +953,8 @@
                 content.style.display = "none";
             } else {
                 content.style.display = "block";
+                // Ensure first descendants are visible when a tree section opens.
+                expandFirstTreeLevel();
             }
         });
     }
@@ -745,6 +964,56 @@
     }
     toggleAllBtn.click();
     coll[0].click();
+
+    function toggleNode(element) {
+        // element is the +/- span inside the node wrapper
+        var li = element.closest("li");
+        if (!li) return;
+
+        // Find direct child <ul> (the subtree)
+        var childUl = null;
+        for (var j = 0; j < li.children.length; j++) {
+            var el = li.children[j];
+            if (el.tagName && el.tagName.toLowerCase() === "ul") {
+                childUl = el;
+                break;
+            }
+        }
+        if (!childUl) return;
+
+        if (childUl.style.display === "none") {
+            childUl.style.display = "";   // revert to CSS default (your .tree ul uses display: table)
+            element.textContent = "−";
+        } else {
+            childUl.style.display = "none";
+            element.textContent = "+";
+        }
+    }
+
+    // Expand only the first descendants of each tree by default.
+    function expandFirstTreeLevel() {
+        var trees = document.querySelectorAll("ul.tree");
+        for (var t = 0; t < trees.length; t++) {
+            var rootLis = trees[t].children;
+            for (var r = 0; r < rootLis.length; r++) {
+                var li = rootLis[r];
+                var childUl = null;
+                var toggleIcon = li.querySelector(".tree-node-wrap > .toggle-icon");
+                for (var c = 0; c < li.children.length; c++) {
+                    var el = li.children[c];
+                    if (el.tagName && el.tagName.toLowerCase() === "ul") {
+                        childUl = el;
+                    }
+                }
+                if (childUl) {
+                    childUl.style.display = "";
+                    if (toggleIcon) {
+                        toggleIcon.textContent = "−";
+                    }
+                }
+            }
+        }
+    }
 
     function toggleAl() {
         var btn = document.getElementById("toggleAl");
@@ -853,6 +1122,53 @@
             console.error('Failed to copy code:', err);
             button.innerText = 'Error';
         });
+    }
+
+    function expandAllTrees(scope) {
+        var root = scope || document;
+        var trees = root.querySelectorAll("ul.tree");
+        for (var t = 0; t < trees.length; t++) {
+            var uls = trees[t].querySelectorAll("ul");
+            for (var u = 0; u < uls.length; u++) {
+                uls[u].style.display = "";
+            }
+            var icons = trees[t].querySelectorAll(".toggle-icon");
+            for (var i = 0; i < icons.length; i++) {
+                if (icons[i].textContent !== "") {
+                    icons[i].textContent = "−";
+                }
+            }
+        }
+    }
+
+    function toggleAllTrees(button) {
+        if (!button) return;
+        var scope = button.closest(".content") || document;
+        var isExpanded = button.textContent.trim() === "Collapse";
+        if (isExpanded) {
+            collapseAllTrees(scope);
+            button.textContent = "Expand";
+        } else {
+            expandAllTrees(scope);
+            button.textContent = "Collapse";
+        }
+    }
+
+    function collapseAllTrees(scope) {
+        var root = scope || document;
+        var trees = root.querySelectorAll("ul.tree");
+        for (var t = 0; t < trees.length; t++) {
+            var uls = trees[t].querySelectorAll("ul");
+            for (var u = 0; u < uls.length; u++) {
+                uls[u].style.display = "none";
+            }
+            var icons = trees[t].querySelectorAll(".toggle-icon");
+            for (var i = 0; i < icons.length; i++) {
+                if (icons[i].textContent !== "") {
+                    icons[i].textContent = "+";
+                }
+            }
+        }
     }
 
     var dotString = `

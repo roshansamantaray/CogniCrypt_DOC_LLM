@@ -1,15 +1,19 @@
 import os
 import sys
-import json
-import re
-import argparse
 from pathlib import Path
 from typing import Dict, List, Tuple
+
 import numpy as np
-from dotenv import load_dotenv
 from openai import OpenAI
 
 from paper_index import build_pdf_index
+from utils.writer_core import (
+    WriterCLIConfig,
+    build_explanation_prompt,
+    build_system_messages,
+    process_rule_core,
+    run_writer_main,
+)
 
 try:
     # ensure Python stdout uses UTF-8 (Python 3.7+)
@@ -22,239 +26,35 @@ except Exception:
 # Resolve project root and important folders
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RULES_DIR = PROJECT_ROOT / "src" / "main" / "resources" / "CrySLRules"
-SANITIZED_DIR = PROJECT_ROOT / "llm" / "sanitized_rules"
-FILENAME_TEMPLATE = "sanitized_rule_{fqcn}_{lang}.json"
-SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
 PDF_PATH = PROJECT_ROOT / "tse19CrySL.pdf"
 
-def rule_path(fqcn: str, lang: str) -> Path:
-    sanitized_name =  SANITIZED_DIR / FILENAME_TEMPLATE.format(fqcn=fqcn, lang=lang)
-    return sanitized_name
 
-def load_json(path: Path):
-    try:
-        with path.open(encoding="utf-8") as f:
-            return json.load(f)
-    except FileNotFoundError:
-        print(f"[WARN] Missing file: {path}", file=sys.stderr)
-    except Exception as e:
-        print(f"[ERROR] Could not read {path}: {e}", file=sys.stderr)
-    return None
-
-def clean_item(s):
-    if not isinstance(s, str):
-        return str(s)
-    s2 = s.strip()
-    if s2.startswith(","):
-        s2 = s2.lstrip(",").strip()
-    return s2
-
-def collect_dependency_constraints(target_fqcn: str, language: str) -> Tuple[List[str], Dict[str, List[str]]]:
-    dep_to_constraints : Dict[str, List[str]] = {}
-    deps_order: List[str] = []
-
-    primary_path = rule_path(target_fqcn, language)
-    primary = load_json(primary_path)
-    if not primary:
-        return deps_order, dep_to_constraints
-
-    deps = primary.get("dependency") or []
-    seen = set()
-    for dep in deps:
-        if dep == target_fqcn or dep in seen:
-            continue
-        seen.add(dep)
-        deps_order.append(dep)
-
-        dep_path = rule_path(dep, language)
-        dep_json = load_json(dep_path)
-        if not dep_json:
-            dep_to_constraints[dep] = []
-            continue
-
-        constraints = dep_json.get("constraints")
-        if constraints is None:
-            constraints = dep_json.get("constraint")
-        if constraints is None:
-            constraints = []
-        if not isinstance(constraints, list):
-            constraints = [constraints]
-        dep_to_constraints[dep] = [clean_item(c) for c in constraints]
-
-    return deps_order, dep_to_constraints
-
-def format_dependency_constraints(deps_order: List[str], dep_to_constraints: Dict[str, List[str]]) -> str:
-    if not deps_order:
-        return "No dependency constraints supplied."
-    parts = []
-    for dep in deps_order:
-        constraints = dep_to_constraints.get(dep, []) or []
-        if not constraints:
-            parts.append(f"Dependency: {dep}\n  - (no constraints)")
-        else:
-            lines = "\n".join(f"  - {c}" for c in constraints)
-            parts.append(f"Dependency: {dep}\n{lines}")
-    return "\n\n".join(parts)
-
-def _normalize_listish(value) -> List[str]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [clean_item(v) for v in value if str(v).strip()]
-    if isinstance(value, str):
-        v = value.strip()
-        return [v] if v else []
-    return [clean_item(value)]
-
-def collect_dependency_ensures(primary_fqcn: str, language: str, depth: int = 1) -> Tuple[List[str], Dict[str, List[str]]]:
-    """Return (deps_order, dep_to_ensures) where dep_to_ensures maps fqcn -> list[str].
-    depth=1 means direct dependencies only. Cycle-safe.
-    """
-    dep_to_ensures: Dict[str, List[str]] = {}
-    deps_order: List[str] = []
-
-    primary = load_json(rule_path(primary_fqcn, language))
-    if not primary:
-        return deps_order, dep_to_ensures
-
-    roots = primary.get("dependency") or []
-    seen = {primary_fqcn}
-
-    def visit(fqcn: str, cur_depth: int):
-        if fqcn in seen:
-            return
-        seen.add(fqcn)
-        if fqcn not in deps_order:
-            deps_order.append(fqcn)
-
-        data = load_json(rule_path(fqcn, language))
-        if not data:
-            dep_to_ensures[fqcn] = []
-            return
-
-        dep_to_ensures[fqcn] = _normalize_listish(data.get("ensures"))
-
-        # Recurse if requested
-        if cur_depth < depth:
-            for sub in _normalize_listish(data.get("dependency")):
-                visit(sub, cur_depth + 1)
-
-    for dep in roots:
-        if isinstance(dep, str) and dep:
-            visit(dep, 1)
-
-    return deps_order, dep_to_ensures
-
-def format_dependency_ensures(primary_fqcn: str, deps_order: List[str], dep_to_ensures: Dict[str, List[str]]) -> str:
-    if not deps_order:
-        return f"No dependent component guarantees were available for {primary_fqcn}."
-
-    lines = [
-        f"### How related components influence {primary_fqcn}",
-        ("Below are the guarantees (postconditions) that related classes provide when used correctly. "
-         "Use these to explain why and how the primary class depends on them.\n")
-    ]
-    for fqcn in deps_order:
-        ensures = dep_to_ensures.get(fqcn, []) or []
-        if not ensures:
-            lines.append(f"- **{fqcn}**: *(no ensures available or file missing)*")
-            continue
-        lines.append(f"- **{fqcn}**:")
-        lines.extend([f"  - {e}" for e in ensures])
-    return "\n".join(lines)
-
-def crysl_to_json_lines(crysl_text: str) -> Dict[str, List[str]]:
-    sections = [
-        "SPEC",
-        "OBJECTS",
-        "EVENTS",
-        "ORDER",
-        "CONSTRAINTS",
-        "REQUIRES",
-        "ENSURES",
-        "FORBIDDEN",
-    ]
-    pat = re.compile(r"\b(" + "|".join(sections) + r")\b")
-    matches = list(pat.finditer(crysl_text))
-    out: Dict[str, List[str]] = {}
-    for i, m in enumerate(matches):
-        header = m.group(1)
-        start = m.end()
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(crysl_text)
-        raw_lines = crysl_text[start:end].strip().splitlines()
-        lines = [line.strip() for line in raw_lines if line.strip()]
-        out[header] = lines
-    return out
-
-def clean_llm_output(text: str) -> str:
-    # Keep Markdown headings; just strip stray code fences
-    text = re.sub(r"^```(?:\w+)?\s*$", "", text, flags=re.MULTILINE)
-    text = re.sub(r"^```\s*$", "", text, flags=re.MULTILINE)
-    return text.strip()
-
-def lines_to_text(section) -> str:
-    if isinstance(section, list):
-        return "\n".join(section) if section else "_no entries_"
-    return str(section) if section else "_no entries_"
-
-def validate_and_fill(rule: dict, language: str) -> dict:
-    defaults = {
-        "SPEC": "",
-        "OBJECTS": "None",
-        "EVENTS": "N/A",
-        "ORDER": "N/A",
-        "CONSTRAINTS": "N/A",
-        "REQUIRES": "None",
-        "ENSURES": "N/A",
-        "FORBIDDEN": "N/A",
-        "LANGUAGE": language,
-    }
-    for key, default in defaults.items():
-        if key not in rule:
-            rule[key] = default
-    return rule
-
-def format_sanitized_rule_for_prompt(sanitized: dict) -> str:
-    if not sanitized:
-        return "No sanitized fields supplied."
-    exclude = {"dependency"}
-    parts = []
-    for key, val in sanitized.items():
-        if key in exclude or val is None:
-            continue
-        k = str(key)
-        if isinstance(val, list):
-            if not val:
-                continue
-            lines = "\n".join(f"- {clean_item(it)}" for it in val)
-            parts.append(f"{k}:\n{lines}")
-        elif isinstance(val, dict):
-            if not val:
-                continue
-            lines = "\n".join(f"- {ik}: {clean_item(iv)}" for ik, iv in val.items())
-            parts.append(f"{k}:\n{lines}")
-        else:
-            parts.append(f"{k}: {clean_item(val)}")
-    return "\n\n".join(parts) if parts else "No sanitized fields supplied."
-
+# Embed text with OpenAI embeddings and return a float32 matrix.
 def _embed_texts(client: OpenAI, texts: List[str], model: str = "text-embedding-3-small") -> np.ndarray:
+    """Return float32 embeddings for a list of strings using an OpenAI embedding model."""
     resp = client.embeddings.create(model=model, input=texts)
     return np.asarray([d.embedding for d in resp.data], dtype="float32")
 
-def make_rag_context(
-        client: OpenAI,
-        idx,                   # from paper_index.build_pdf_index
-        chunks,                # list of DocChunk (must have .text)
-        emb_model: str,
-        rule_sections_txt: Dict[str, str],
-        k: int = 6,
-        per_chunk_max: int = 900,   # optional: trim long chunks
-) -> Tuple[str, str]:
-    """
-    Returns (rag_block, rag_sources_block).
 
-      - rag_block: concatenated top-k snippets tagged [C1], [C2], ...
-      - rag_sources_block: e.g., "[C1] [C2] [C3]"
+# Build RAG context using the CrySL paper index and this rule's sections.
+def make_rag_context(
+    client: OpenAI,
+    idx,  # from paper_index.build_pdf_index
+    chunks,  # list of DocChunk (must have .text)
+    emb_model: str,
+    rule_sections_txt: Dict[str, str],
+    k: int = 6,
+    per_chunk_max: int = 900,  # optional: trim long chunks
+) -> str:
+    """
+    Build a retrieval context block from top-k CrySL-paper chunks.
+
+    Inputs:
+    - client: OpenAI client used only for query embedding.
+    - idx/chunks: FAISS-backed index and aligned chunk metadata from paper_index.
+    - rule_sections_txt: normalized CrySL sections for the current rule.
+    Returns:
+    - rag_block: concatenated snippets tagged [C1], [C2], ...
     """
 
     # 1) Bias retrieval toward CrySL grammar/semantics (so we explain the SYNTAX)
@@ -268,387 +68,157 @@ def make_rag_context(
     - EBNF grammar and formal semantics
     """.strip()
 
-
-    # 2) Build the query using BOTH the syntax boost and this rule’s actual sections
-    query_text = "\n".join([
-        syntax_boost,
-        "THIS RULE:",
-        "SPEC: " + (rule_sections_txt.get("SPEC") or ""),
-        "OBJECTS: " + (rule_sections_txt.get("OBJECTS") or ""),
-        "EVENTS: " + (rule_sections_txt.get("EVENTS") or ""),
-        "ORDER: " + (rule_sections_txt.get("ORDER") or ""),
-        "CONSTRAINTS: " + (rule_sections_txt.get("CONSTRAINTS") or ""),
-        "REQUIRES: " + (rule_sections_txt.get("REQUIRES") or ""),
-        "ENSURES: " + (rule_sections_txt.get("ENSURES") or ""),
-        ]).strip()
+    # 2) Build the query using BOTH the syntax boost and this rule's actual sections
+    query_text = "\n".join(
+        [
+            syntax_boost,
+            "THIS RULE:",
+            "SPEC: " + (rule_sections_txt.get("SPEC") or ""),
+            "OBJECTS: " + (rule_sections_txt.get("OBJECTS") or ""),
+            "EVENTS: " + (rule_sections_txt.get("EVENTS") or ""),
+            "ORDER: " + (rule_sections_txt.get("ORDER") or ""),
+            "CONSTRAINTS: " + (rule_sections_txt.get("CONSTRAINTS") or ""),
+            "REQUIRES: " + (rule_sections_txt.get("REQUIRES") or ""),
+            "ENSURES: " + (rule_sections_txt.get("ENSURES") or ""),
+        ]
+    ).strip()
 
     if not hasattr(idx, "index") or idx.index is None or not chunks:
-        return "", ""
+        return ""
 
-    # 3) Embed and search
+    # 3) Embed and search through the shared abstraction.
+    # Using `idx.search(...)` aligns OpenAI and Ollama adapters on one retrieval contract:
+    # both receive ordered `(chunk_id, score)` hits from EmbeddingIndex.
     qvec = _embed_texts(client, [query_text], model=emb_model)[0]
-    D, I = idx.index.search(qvec.reshape(1, -1), k)
+    hits = idx.search(qvec, k)
 
     # 4) Build tagged snippets; normalize common PDF ligatures for safer display
     def _normalize_pdf_text(s: str) -> str:
-        return (s.replace("\ufb01", "fi")
-                .replace("\ufb02", "fl")
-                .replace("\u00ad", "")   # soft hyphen
-                .strip())
+        """Normalize common PDF ligatures and soft hyphens for cleaner markdown output."""
+        return s.replace("\ufb01", "fi").replace("\ufb02", "fl").replace("\u00ad", "").strip()
 
+    # Resolve FAISS hit ids to chunk objects via a dictionary instead of positional indexing.
+    # This avoids accidental coupling to list order and keeps mapping stable by chunk id.
+    chunk_by_id = {getattr(c, "id", None): c for c in chunks}
     rag_snippets: List[str] = []
-    cites: List[str] = []
 
-    for rank, i in enumerate(I[0], start=1):
-        if i == -1:
+    for rank, (hid, _score) in enumerate(hits, start=1):
+        c = chunk_by_id.get(hid)
+        if not c:
             continue
-        c = chunks[i]
         tag = f"[C{rank}]"
         text = _normalize_pdf_text(getattr(c, "text", ""))
         if per_chunk_max and len(text) > per_chunk_max:
             text = text[:per_chunk_max].rsplit(" ", 1)[0] + " ..."
         rag_snippets.append(f"{tag} {text}")
-        cites.append(tag)
 
     rag_block = "\n\n".join(rag_snippets) if rag_snippets else ""
-    rag_sources = " ".join(cites) if cites else ""
-    return rag_block, rag_sources
+    return rag_block
 
+
+# Build the LLM prompt and request a structured explanation.
 def generate_explanation(
-        client: OpenAI,
-        model: str,
-        class_name: str,
-        objects: str,
-        events: str,
-        order: str,
-        constraints: str,
-        requires: str,
-        ensures: str,
-        forbidden: str,
-        dep_constraints_text: str,
-        dep_ensures_text: str,  # NEW
-        sanitized_summary: str,
-        raw_crysl_text: str,
-        explanation_language: str,
-        rag_block: str = "",
-        rag_sources: str = "",
+    client: OpenAI,
+    model: str,
+    class_name: str,
+    objects: str,
+    events: str,
+    order: str,
+    constraints: str,
+    requires: str,
+    ensures: str,
+    forbidden: str,
+    dep_constraints_text: str,
+    dep_ensures_text: str,
+    sanitized_summary: str,
+    raw_crysl_text: str,
+    explanation_language: str,
+    rag_block: str = "",
 ) -> str:
-    prompt = fr"""
-You are a cryptography expert who explains complex CrySL rules to Java developers in clear, natural language.
+    """Generate a full natural-language rule explanation via OpenAI chat completion."""
+    # Build the strict user prompt that includes CrySL-derived fields and section requirements.
+    prompt = build_explanation_prompt(
+        class_name=class_name,
+        objects=objects,
+        events=events,
+        order=order,
+        constraints=constraints,
+        requires=requires,
+        ensures=ensures,
+        forbidden=forbidden,
+        dep_constraints_text=dep_constraints_text,
+        dep_ensures_text=dep_ensures_text,
+        sanitized_summary=sanitized_summary,
+        raw_crysl_text=raw_crysl_text,
+        explanation_language=explanation_language,
+        include_utf8_line=True,
+    )
 
-You are analyzing the CrySL specification for: `{class_name}`
+    # Add base system guidance and optional hidden RAG reference material.
+    sys_msgs = build_system_messages(rag_block)
 
-Raw CrySL Data:
-- OBJECTS: {objects}
-- EVENTS: {events}
-- ORDER: {order}
-- CONSTRAINTS: {constraints}
-- REQUIRES: {requires}
-- ENSURES: {ensures}
-- FORBIDDEN: {forbidden}
-- Dependency Constraints (reference only): {dep_constraints_text}
-- Dependency Guarantees (ENSURES):
-{dep_ensures_text}
-- Additional context: {sanitized_summary}
-- Original CrySL: {raw_crysl_text}
-
-Your Task: Create a developer-friendly guide that explains how to correctly use this cryptographic class WITHOUT using technical CrySL notation, event labels, or abstract parameter names.
-
-CRITICAL RULES:
-1. NO TABLES containing event labels (like g1, i2, u3) or parameter lists
-2. NO technical identifiers from CrySL should appear in the output
-3. NO abstract variable names (like prePlainText, preCipherTextOffset) in explanations
-4. EVERYTHING must be explained in natural, conversational language
-5. Use concrete, meaningful examples that developers can relate to
-6. Focus on practical usage, not formal specifications\
-7. Use any provided reference material ONLY to inform your understanding; do NOT quote it, cite it, or mention its existence in the output.
-
-Output Structure - Use these EXACT section headings (start with ## and no leading spaces):
-
-## Overview
-Write 2-3 paragraphs explaining what this class does, its role in Java cryptography, and why developers would use it. Make it conversational and informative.
-
-## Correct Usage
-Explain the complete workflow as a narrative story. Use phrases like:
-- "To start, you'll need to..."
-- "The first step is to..."
-- "After obtaining an instance..."
-- "Finally, complete the operation by..."
-
-Don't just list methods - explain the logical flow and the purpose of each step. Include method names naturally within sentences.
-
-## Parameters and Constraints
-Group related constraints into logical categories and explain them in full sentences. For each constraint:
-- Explain WHAT is restricted and WHY
-- List allowed values with explanations of when to use each
-- Describe the security implications
-
-Format as grouped bullet points with full explanations, like:
-- **Algorithm choices:** [Full explanation of which algorithms are allowed and why]
-- **Key requirements:** [Explanation of what types of keys are needed]
-- **Data handling rules:** [Explanation of buffer sizes, offsets, etc. in practical terms]
-
-When listing allowed values (algorithms, modes, etc.), explain what each means and when to use it.
-
-## Method Variations and Use Cases
-Group methods by their purpose and explain when to use each variation. Structure as:
-
-### [Functional Group Name]
-Explanation of what this group of methods does, followed by:
-- **Scenario 1:** Description and when to use this approach
-- **Scenario 2:** Description and when to use this alternative
-- etc.
-
-For example, instead of listing "init variants i1-i8", group them as "Initialization Options" and explain each scenario where you'd use different parameters.
-
-## Security Requirements
-Translate all REQUIRES/ENSURES predicates into plain English requirements that developers can understand:
-- Instead of "REQUIRES: generatedKey[key]", write something like "Before using this method, ensure your key was generated using a cryptographically secure key generator"
-- Explain what security guarantees the class provides after operations
-- Describe any dependencies on other cryptographic operations
-
-**Also incorporate the Dependency Guarantees below:** connect each related class's guarantees to the steps where they matter for `{class_name}`.
-
-## Related Components & Their Guarantees
-Use this section to list and explain guarantees from related classes, and explicitly tie them to `{class_name}` usage decisions. Start by summarizing the list below, then expand with plain-English implications for initialization, parameter selection, and error handling.
-
----
-{dep_ensures_text}
----
-
-## Common Mistakes to Avoid
-Convert all FORBIDDEN items and constraint violations into practical warnings:
-- Explain what NOT to do and the consequences
-- Include common programming errors related to this class
-- Describe what happens if required steps are skipped
-
-## Quick Reference Checklist
-Create a practical checklist written as questions a developer can verify:
-- Have you [specific action]?
-- Did you ensure [specific requirement]?
-- Is your [component] properly [configured/initialized/etc.]?
-
-Make each item actionable and specific to this class's requirements.
-
-WRITING STYLE GUIDELINES:
-
-1. **Replace Technical Terms:**
-   - Event labels (g1, i2) → Describe the actual operation
-   - Parameter names from CrySL → Meaningful descriptions
-   - Regex patterns → Step-by-step explanations
-   - Predicates → Security requirements in plain English
-
-2. **Use Natural Language Patterns:**
-   - "When you need to..." instead of "Event x1 with parameters..."
-   - "This ensures that..." instead of "ENSURES: predicate[...]"
-   - "You must first..." instead of "REQUIRES: predicate[...]"
-   - "Never call..." instead of "FORBIDDEN: method[...]"
-
-3. **Make It Practical:**
-   - Relate to real-world scenarios
-   - Explain the 'why' behind each requirement
-   - Use analogies where helpful
-   - Focus on what developers need to do, not on formal specifications
-
-4. **Be Specific About Security:**
-   - Explain why each constraint exists
-   - Describe attack scenarios that constraints prevent
-   - Clarify the security impact of each requirement
-
-Remember: Your audience is Java developers who need to use this cryptographic class correctly but may not be security experts. Every explanation should help them understand not just WHAT to do, but WHY it matters for security.
-
-The goal is to produce documentation that a developer can read like a tutorial, not a reference manual. They should understand how to use the class correctly without ever seeing CrySL syntax or formal notation.
-Respond in **{explanation_language}** and be as precise as possible.\
-Make sure that the response is in **utf-8** charset only.
-"""
-    sys_msgs = [
-        {
-            "role": "system",
-            "content": (
-                "You are a patient teacher who excels at explaining complex technical concepts in simple, practical terms. "
-                "Use any reference material provided to interpret CrySL syntax precisely, but do NOT quote it, cite it, "
-                "or mention its existence in your final answer."
-            ),
-        }
-    ]
-
-    # Add RAG context as hidden reference material (only if available)
-    if rag_block:
-        sys_msgs.append({
-            "role": "system",
-            "content": "REFERENCE MATERIAL (do not quote, cite, or mention this explicitly):\n" + rag_block
-        })
-
+    # Single completion call for the final explanation text.
     resp = client.chat.completions.create(
         model=model,
-        messages=sys_msgs + [
-            {"role": "user", "content": prompt},
-        ],
+        messages=sys_msgs + [{"role": "user", "content": prompt}],
         temperature=0.3,
         max_tokens=4000,
         # No stop sequence to avoid accidental truncation on ``` blocks
     )
     return resp.choices[0].message.content
 
-def process_rule(crysl_path: str, language: str, client: OpenAI, model: str, target_fqcn: str, idx=None, chunks=None, k: int = 6, emb_model: str = "text-embedding-3-small"):
-    try:
-        with open(crysl_path, "r", encoding="utf-8") as f:
-            content = f.read()
-    except Exception as e:
-        print(f"Error loading CrySL from {crysl_path}: {e}", file=sys.stderr)
-        return
 
-    crysl_data = crysl_to_json_lines(content)
-    rule = validate_and_fill(crysl_data, language)
-
-    # Fallback to FQCN if SPEC missing
-    if isinstance(rule["SPEC"], list):
-        class_name = rule["SPEC"][0] if rule["SPEC"] else target_fqcn
-    else:
-        class_name = rule["SPEC"] or target_fqcn
-
-    # Prepare human-readable blocks
-    objects_txt = lines_to_text(rule["OBJECTS"])
-    events_txt = lines_to_text(rule["EVENTS"])
-    order_txt = lines_to_text(rule["ORDER"])
-    constraints_txt = lines_to_text(rule["CONSTRAINTS"])
-    requires_txt = lines_to_text(rule["REQUIRES"])
-    ensures_txt = lines_to_text(rule["ENSURES"])
-    forbidden_txt = lines_to_text(rule.get("FORBIDDEN", "N/A"))
-
-    # Dependency constraints (kept for reference)
-    deps_order_c, dep_to_constraints = collect_dependency_constraints(target_fqcn, language)
-    dep_constraints_text = format_dependency_constraints(deps_order_c, dep_to_constraints)
-
-    # Dependency ensures (NEW)
-    deps_order_e, dep_to_ensures = collect_dependency_ensures(target_fqcn, language, depth=1)
-    dep_ensures_text = format_dependency_ensures(target_fqcn, deps_order_e, dep_to_ensures)
-
-    # Load primary sanitized rule and format its human-friendly fields
-    primary_sanitized = load_json(rule_path(target_fqcn, language))
-    sanitized_summary = (
-        format_sanitized_rule_for_prompt(primary_sanitized)
-        if primary_sanitized
-        else "No sanitized fields supplied."
-    )
-
-    # (Optional) RAG context from the CrySL paper
-    rag_block = ""
-    rag_sources = ""
-    if idx is not None and chunks is not None and hasattr(idx, "index"):
-        sect = {
-            "SPEC": class_name,
-            "OBJECTS": objects_txt,
-            "EVENTS": events_txt,
-            "ORDER": order_txt,
-            "CONSTRAINTS": constraints_txt,
-            "REQUIRES": requires_txt,
-            "ENSURES": ensures_txt,
-        }
-        rag_block, rag_sources = make_rag_context(
-            client, idx, chunks, emb_model=emb_model, rule_sections_txt=sect, k=k
-        )
-
-
-    try:
-        raw_out = generate_explanation(
-            client=client,
-            model=model,
-            class_name=class_name,
-            objects=objects_txt,
-            events=events_txt,
-            order=order_txt,
-            constraints=constraints_txt,
-            requires=requires_txt,
-            ensures=ensures_txt,
-            forbidden=forbidden_txt,
-            dep_constraints_text=dep_constraints_text,
-            dep_ensures_text=dep_ensures_text,
-            sanitized_summary=sanitized_summary,
-            raw_crysl_text=content,
-            explanation_language=language,
-            rag_block=rag_block,
-            rag_sources=rag_sources,
-        )
-    except Exception as e:
-        print(f"LLM explanation error for {class_name}: {e}", file=sys.stderr)
-        return
-
-    cleaned = clean_llm_output(raw_out)
-    print(cleaned)
-    return cleaned
-
-def main():
-    parser = argparse.ArgumentParser(
-        description=(
-            "Generate CrySL rule explanations via LLM (with dependency ENSURES + constraints, optional RAG)"
-        )
-    )
-    parser.add_argument(
-        "class_name_full",
-        help=(
-            "Fully qualified class name of the CrySL rule (e.g., java.security.AlgorithmParameters)"
-        ),
-    )
-    parser.add_argument(
-        "language",
-        help="Explanation language (e.g., English)",
-    )
-    parser.add_argument(
-        "--model", "-m", default="gpt-4o-mini",
-        help="OpenAI model to use for completions",
-    )
-    parser.add_argument(
-        "--pdf",
-        default=PDF_PATH,
-        help=f"Path to the CrySL paper PDF for RAG (default: {PDF_PATH})"
-    )
-    parser.add_argument(
-        "--k",
-        type=int,
-        default=6,
-        help="How many chunks to retrieve from the paper for context"
-    )
-    parser.add_argument(
-        "--emb-model",
-        default="text-embedding-3-small",
-        help="Embedding model for RAG queries"
-    )
-    args = parser.parse_args()
-
-    class_name_full = args.class_name_full
-    language = args.language
-
-    simple_name = class_name_full.rsplit(".", 1)[-1]
-    crysl_filename  = f"{simple_name}.crysl"
-    crysl_full_path  = RULES_DIR / crysl_filename
-
-    if not crysl_full_path .is_file():
-        print(f"{crysl_filename} not found in {RULES_DIR}.", file=sys.stderr)
-        return
-
-    load_dotenv()
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-    idx = None
-    chunks = None
-    try:
-        if args.pdf and Path(args.pdf).exists():
-            idx, chunks = build_pdf_index(args.pdf, emb_model=args.emb_model)
-        else:
-            print(f"[INFO] Skipping RAG: PDF not found at {args.pdf}", file=sys.stderr)
-    except Exception as e:
-        print(f"[WARN] RAG disabled (index build/load failed): {e}", file=sys.stderr)
-    process_rule(
-        str(crysl_full_path),
-        language,
-        client,
-        args.model,
-        class_name_full,
+# Orchestrate a single rule's explanation generation pipeline.
+def process_rule(
+    crysl_path: str,
+    language: str,
+    client: OpenAI,
+    model: str,
+    target_fqcn: str,
+    idx=None,
+    chunks=None,
+    k: int = 6,
+    emb_model: str = "text-embedding-3-small",
+):
+    """Run the shared single-rule pipeline with OpenAI-specific callbacks."""
+    return process_rule_core(
+        crysl_path=crysl_path,
+        language=language,
+        client=client,
+        model=model,
+        target_fqcn=target_fqcn,
+        make_rag_context_fn=make_rag_context,
+        generate_explanation_fn=generate_explanation,
         idx=idx,
         chunks=chunks,
-        k=args.k,
-        emb_model=args.emb_model,
+        k=k,
+        emb_model=emb_model,
     )
 
+
+# CLI entrypoint: parse args, init OpenAI client, optional RAG index, and run.
+def main():
+    """CLI entrypoint for OpenAI-backed explanation generation."""
+    # Provider-specific defaults are injected into the shared CLI/runtime orchestrator.
+    cli_config = WriterCLIConfig(
+        description="Generate CrySL rule explanations via LLM (with dependency ENSURES + constraints, optional RAG)",
+        model_default="gpt-4o-mini",
+        model_help="OpenAI model to use for completions",
+        pdf_default=PDF_PATH,
+        emb_model_default="text-embedding-3-small",
+        emb_model_help="Embedding model for RAG queries",
+    )
+
+    # Delegate argument parsing, CrySL resolution, optional RAG indexing, and processing.
+    run_writer_main(
+        rules_dir=RULES_DIR,
+        cli_config=cli_config,
+        init_client_fn=lambda: OpenAI(api_key=os.getenv("OPENAI_API_KEY")),
+        build_pdf_index_fn=build_pdf_index,
+        process_rule_fn=process_rule,
+    )
+
+
+# Standard entry guard for CLI usage.
 if __name__ == "__main__":
     main()

@@ -1,3 +1,8 @@
+# LLM + RAG dependencies used by the Python sidecar.
+# - openai/python-dotenv: model calls + env loading
+# - langchain/*, sentence-transformers: optional RAG helpers
+# - faiss-cpu/pypdf: PDF indexing and embedding search
+# - beautifulsoup4/lxml: HTML parsing utilities (if used by RAG helpers)
 openai>=1.0.0
 python-dotenv>=1.0.0
 langchain

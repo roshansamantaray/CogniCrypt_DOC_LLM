@@ -11,9 +11,13 @@ import java.util.*;
 public class StateMachineToGraphviz {
 
 
-    //Translates the state machine provided by a CrySL rule into DOT syntax of Graphviz
+    // Translates the state machine provided by a CrySL rule into DOT syntax of Graphviz.
+    /**
+     * Render a CrySL state machine as Graphviz DOT.
+     */
     public static String toGraphviz(StateMachineGraph smg) {
         StringBuilder stringBuilderToFile = new StringBuilder();
+        // Graph header and global styling.
         stringBuilderToFile.append("digraph fsm {\n" +
                 "rankdir=LR;\n"+
                 "graph[bgcolor=transparent]");
@@ -21,6 +25,7 @@ public class StateMachineToGraphviz {
         StringBuilder acceptingStates = new StringBuilder("node [shape = doublecircle];");
         String States = "node [shape = circle];\n";
         stringBuilderToFile.append("edge [labeldistance=2.5, labelangle=45];");
+        // Mark accepting states with a double circle (use Start for initial+accepting).
         for (StateNode node : smg.getNodes()) {
             if (node.getAccepting()) {
                if (node.isInitialState()) acceptingStates.append(" ").append("Start");
@@ -30,6 +35,7 @@ public class StateMachineToGraphviz {
         stringBuilderToFile.append(acceptingStates.toString()).append(";\n");
         stringBuilderToFile.append(States);
 
+        // Render transitions with aggregated labels.
         for (TransitionEdge edge : edges) {
             if (edge.getLeft().getName().equals("-1")) stringBuilderToFile.append("Start").append(" -> ").append(edge.getRight().getName());
             else stringBuilderToFile.append(edge.getLeft().getName()).append(" -> ").append(edge.getRight().getName());
@@ -41,6 +47,7 @@ public class StateMachineToGraphviz {
                 // If booleanG flag is parsed, use fully qualified name as edge label
                 String labelName = !DocSettings.getInstance().isBooleanG() ? label.getName() : getShortName(label);
 
+                // Substitute parameter types into the label for readability.
                 for (Map.Entry<String, String> method : label.getParameters()) {
                     if (!method.getValue().equals("AnyType")) {
                         labelName = !DocSettings.getInstance().isBooleanG() ? labelName.replace(method.getKey(), method.getValue()) : labelName.replace(method.getKey(), method.getValue().substring(method.getValue().lastIndexOf(".") + 1));
@@ -64,6 +71,9 @@ public class StateMachineToGraphviz {
 
     }
 
+    /**
+     * Build a short method signature string for Graphviz labels.
+     */
     private static String getShortName(CrySLMethod label) {
         StringBuilder stmntBuilder = new StringBuilder();
         String returnValue = (String)label.getRetObject().getKey();

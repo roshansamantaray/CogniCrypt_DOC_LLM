@@ -25,6 +25,9 @@ public class ConstraintsComparison {
 
     static PrintWriter out;
 
+    /**
+     * Map internal operator tokens to printable math/comparison symbols.
+     */
     private static String mapToOperator(String arithOp) {
         switch (arithOp) {
             case "p":
@@ -50,42 +53,73 @@ public class ConstraintsComparison {
         }
     }
 
+    /**
+     * Template for length-based >= constraints (non-constructor form).
+     */
     private static char[] getTemplateCompOne() throws IOException {
         return Utils.getTemplatesText("CompConstraint_lengthgreaterequal");
     }
 
+    /**
+     * Template for length-based "< sum" constraints.
+     */
     private static char[] getTemplateComptwo() throws IOException {
         return Utils.getTemplatesText("CompConstraint_lengthlesssum");
     }
 
+    /**
+     * Template for length-based "<" constraints (single RHS).
+     */
     private static char[] getTemplateCompThree() throws IOException {
         return Utils.getTemplatesText("CompConstraint_lengthless");
     }
 
+    /**
+     * Template for numeric >= constraints (non-constructor form).
+     */
     private static char[] getTemplateCompFour() throws IOException {
         return Utils.getTemplatesText("CompConstraint_greaterequal");
     }
 
+    /**
+     * Template for "lhs > rhs" constraints where rhs is a parameter.
+     */
     private static char[] getTemplateCompFive() throws IOException {
         return Utils.getTemplatesText("CompConstraint_greater");
     }
 
+    /**
+     * Template for "lhs < rhs" constraints where rhs is a parameter.
+     */
     private static char[] getTemplateCompSix() throws IOException {
         return Utils.getTemplatesText("CompConstraint_less");
     }
 
+    /**
+     * Template for length-based ">" constraints (single RHS).
+     */
     private static char[] getTemplateCompSeven() throws IOException {
         return Utils.getTemplatesText("CompConstraint_lengthgreater");
     }
 
+    /**
+     * Template for constructor length-based >= constraints.
+     */
     private static char[] getTemplateCompCons1() throws IOException {
         return Utils.getTemplatesText("CompConstraint_lengthgreaterequalCon");
     }
 
+    /**
+     * Template for constructor numeric >= constraints.
+     */
     private static char[] getTemplateCompCons2() throws IOException {
         return Utils.getTemplatesText("CompConstraint_greaterequalCon");
     }
 
+    /**
+     * Build formatted comparison-constraint sentences for a rule.
+     * Handles both length(...) constraints and standard arithmetic comparisons.
+     */
     public ArrayList<String> getConstriantsComp(CrySLRule rule) throws IOException {
         ArrayList<String> composedComparsionConstraint = new ArrayList<>();
         List<ISLConstraint> constraintCompConList = rule.getConstraints().stream()
@@ -113,6 +147,7 @@ public class ConstraintsComparison {
                 Multimap<String, String> paraMethNameMap = ArrayListMultimap.create();
                 Multimap<String, String> paraPosMap = ArrayListMultimap.create();
 
+                // Build a normalized comparison expression string from the CrySL AST.
                 String compStr = compCon.toString();
 
                 CrySLComparisonConstraint crySLComparisonConstraint = (CrySLComparisonConstraint) compCon;
@@ -175,6 +210,7 @@ public class ConstraintsComparison {
                 compStrTemp += equation;
                 compStr = compStrTemp;
                 if (compStr.contains("length")) {
+                    // Branch: length(...) comparisons (position + method name mapping).
                     List<String> splitCompList = Arrays
                             .asList(compStr.replaceAll("[()]", " ").replaceAll("\\s+", " ").split(" "));
                     for (String parameterNameComp : splitCompList) {
@@ -341,7 +377,7 @@ public class ConstraintsComparison {
                     symbolStr = subListRHS.get(0);
 
                     if (resListRHSTwo.size() > 0) {
-
+                        // Case: LHS length compared against sum of two RHS parameters.
                         for (int i = 0; i < resListLHS.size(); i++) {
 
                             List<String> newLHSList = Arrays.asList(resListLHS.get(i).split("\\|"));
@@ -408,7 +444,7 @@ public class ConstraintsComparison {
                             }
                         }
                     } else {
-
+                        // Case: LHS length compared against a single RHS parameter.
                         for (int i = 0; i < resListLHS.size(); i++) {
 
                             List<String> newLHSList = Arrays.asList(resListLHS.get(i).split("\\|"));
@@ -455,6 +491,7 @@ public class ConstraintsComparison {
                 else {
 
                     /* remaining sublist, check second par - numeric or alpha */
+                    // Branch: standard comparisons (lhs op rhs), where rhs may be a number or parameter.
                     List<String> splitCompListTwo = Arrays.asList(compStr.replaceFirst("^0+(?!$)", "").split(" "));
 
                     for (String splitCompTwoStr : splitCompListTwo) {
@@ -621,7 +658,7 @@ public class ConstraintsComparison {
                     symbolStr = subListRHS.get(0);
 
                     if (resListRhsAlpha.size() > 0) {
-
+                        // Case: rhs is a parameter (alpha), use parameter-to-method mapping.
                         for (int i = 0; i < resListLhs.size(); i++) {
 
                             List<String> Lhslist = Arrays.asList(resListLhs.get(i).split("\\|"));
@@ -663,7 +700,7 @@ public class ConstraintsComparison {
                             }
                         }
                     } else {
-
+                        // Case: rhs is a numeric literal.
                         for (int i = 0; i < resListLhs.size(); i++) {
 
                             List<String> Lhselement = Arrays.asList(resListLhs.get(i).split("\\|"));
@@ -707,6 +744,9 @@ public class ConstraintsComparison {
         return composedComparsionConstraint;
     }
 
+    /**
+     * Collect leaf nodes from an arithmetic constraint tree, preserving operators.
+     */
     private void collectLeafNodes(CrySLArithmeticConstraint rightArit, List<LeafNodeWithOperator> rightOperations) {
         if (rightArit.getLeft() instanceof CrySLObject && rightArit.getRight() instanceof CrySLObject) {
             // Both left and right are leaf nodes
@@ -740,24 +780,39 @@ public class ConstraintsComparison {
         }
     }
 
+    /**
+     * Helper pair: a leaf CrySLObject and the operator that applies to it.
+     */
     public class LeafNodeWithOperator {
         private final CrySLObject leafNode;
         private final String operator;
 
+        /**
+         * Construct a leaf/operator pair.
+         */
         public LeafNodeWithOperator(CrySLObject leafNode, String operator) {
             this.leafNode = leafNode;
             this.operator = operator;
         }
 
+        /**
+         * Return the stored leaf node.
+         */
         public CrySLObject getLeafNode() {
             return leafNode;
         }
 
+        /**
+         * Return the operator associated with the leaf.
+         */
         public String getOperator() {
             return operator;
         }
     }
 
+    /**
+     * Node in an arithmetic expression tree, used to rebuild readable equations.
+     */
     public class ArithmeticNode {
         private final String operator;
         private final CrySLObject leftLeafNode;
@@ -765,20 +820,32 @@ public class ConstraintsComparison {
         private ArithmeticNode left;
         private ArithmeticNode right;
 
+        /**
+         * Create an arithmetic node with optional leaf nodes.
+         */
         public ArithmeticNode(String operator, CrySLObject leftLeafNode, CrySLObject rightLeafNode) {
             this.operator = operator;
             this.leftLeafNode = leftLeafNode;
             this.rightLeafNode = rightLeafNode;
         }
 
+        /**
+         * Attach a left subtree.
+         */
         public void setLeft(ArithmeticNode left) {
             this.left = left;
         }
 
+        /**
+         * Attach a right subtree.
+         */
         public void setRight(ArithmeticNode right) {
             this.right = right;
         }
 
+        /**
+         * Build a string equation from the current subtree.
+         */
         public String buildEquation() {
             StringBuilder equationBuilder = new StringBuilder();
 
@@ -807,6 +874,9 @@ public class ConstraintsComparison {
 
     }
 
+    /**
+     * Build an arithmetic expression tree from a CrySL arithmetic constraint.
+     */
     public ArithmeticNode buildTree(CrySLArithmeticConstraint rightArit) {
         if (rightArit.getLeft() instanceof CrySLObject && rightArit.getRight() instanceof CrySLObject) {
             // Both left and right are leaf nodes
@@ -841,3 +911,4 @@ public class ConstraintsComparison {
     }
 
 }
+
