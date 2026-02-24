@@ -18,3 +18,4 @@ temp_rules/
 rag_cache/
 __pycache__/
 *.py[cod]
+llm/.venv/
