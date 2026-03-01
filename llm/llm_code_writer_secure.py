@@ -913,7 +913,7 @@ def process_rule(
 
     if compile_check:
         javac_missing_is_fatal = os.getenv("CRYSLDOC_JAVAC_REQUIRED", "1").strip() == "1"
-        max_repairs = int(os.getenv("CRYSLDOC_MAX_REPAIRS", "3"))
+        max_repairs = int(os.getenv("CRYSLDOC_MAX_REPAIRS", "7"))
 
         ok, err = compile_java(java_only)
 
