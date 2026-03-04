@@ -18,8 +18,8 @@ public class LLMService {
 
     // Resolve project-relative paths for the LLM sidecar scripts and caches.
     private static final Path PROJECT_ROOT = Paths.get(System.getProperty("user.dir"));
-    private static final Path VENV_PY_UNIX = PROJECT_ROOT.resolve(Paths.get("llm", ".venv", "bin", "python"));
-    private static final Path VENV_PY_WIN  = PROJECT_ROOT.resolve(Paths.get("llm", ".venv", "Scripts", "python.exe"));
+    private static final Path VENV_PY_UNIX = PROJECT_ROOT.resolve(Paths.get(".venv", "bin", "python"));
+    private static final Path VENV_PY_WIN  = PROJECT_ROOT.resolve(Paths.get(".venv", "Scripts", "python.exe"));
 
     /**
      * Detect whether the current OS is Windows for Python fallback selection.

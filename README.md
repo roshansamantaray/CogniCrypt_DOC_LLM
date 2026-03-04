@@ -1,51 +1,152 @@
-# CogniCrypt_DOC
-This repo contains the implementation of CogniCrypt_DOC. The project generates html-based documentation utilising a domain specific language called CrySL. The master thesis developed a prototype that generates natural language documentation based on CrySL rules and templates. The Bachelor thesis built on top of that prototype to improve the tool and the generated documentation by utilising FTL templates.
+# CogniCrypt_DOC_LLM
+CogniCrypt_DOC_LLM generates HTML documentation for cryptographic APIs from CrySL rules.
 
-The html-based documentation can be found in the zip file `generated_doc_and_code_example`. The entrypoint of the documentation is the `rootpage.html` file.
+It converts formal CrySL usage specifications into developer-facing pages (overview, call order, constraints, predicates, dependency trees, CrySL rule text), and can optionally enrich those pages with:
+- LLM explanations (English, Portuguese, German, French)
+- secure and insecure Java code examples
 
- Bachelor Thesis Topic:
- ```
- Improving Documentation Generation for Cryptographic APIs - A reinterpretation of CogniCryptDOC
- ```
+The documentation entry page is `rootpage.html` inside your configured output directory.
 
-    
- Master Thesis Topic : 
- 
-        CogniCrypt_DOC
-    Transforming API Usage
-    Specification to API Documentation
+For a deeper architecture walkthrough, see `PROJECT_GUIDE.md`.
 
-The "Output" folder contains the generated documentation of the master thesis implementation for each class.
+## What This Project Contains
+- Java documentation pipeline (`src/main/java/de/upb/docgen/**`)
+- FreeMarker templates for HTML rendering (`src/main/resources/FTLTemplates/**`)
+- Language templates used to build natural-language rule text (`src/main/resources/Templates/**`)
+- Bundled CrySL rules (`src/main/resources/CrySLRules/**`)
+- Python LLM sidecar for explanation/code generation (`llm/**`)
+
+## Prerequisites
+- Java 11
+- Maven
+- Python 3 (required only for LLM features)
 
 ## Build
-CogniCryptDOC uses Maven as build tool. You can compile and build this project via
-
-```mvn clean install```
-
-The jar is found in the generated target folder.
-
-## Usage
-
-CogniCryptDOC requires four arguments:
-
-```
-java -jar <path-to-docgen-jar> 
-      --rulesDir <absolute-path-to-crysl-source-code-format-rules> 
-      --FTLtemplatesPath <absolute_path_to_ftl_templates>
-      --LANGtemplatesPath <absolute_path_to_lang_templates>
-      --reportPath <absolute_path_to_generate_documentation>
+```bash
+mvn clean install
 ```
 
-By default are all features of the html-based documentation enabled. To turn off features speficy the following additional arguments:
+or
 
-```
---booleanA <To hide state machine graph>
---booleanB <To hide help button>
---booleanC <To hide dependency trees sections>
---booleanD <To hide CrySL rule section>
---booleanE <To turn of graphviz generation>
---booleanF <To copy CrySL rules into documentation folder>
+```bash
+mvn -DskipTests package
 ```
 
-Sets of natural language templates, FTL templates and CrySL rules can be found in `src/main/resources/`
-The generated documentation can be viewed by a browser. <absolute_path_to_generate_documentation>/`rootpage.html` is the entry point of the documentation.
+Generated JAR:
+- `target/DocGen-0.0.1-SNAPSHOT.jar`
+- runtime dependencies in `target/lib/` (keep this folder next to the JAR when running outside the project root)
+
+## Quick Start
+Minimal run command (only required flag is `--reportPath`):
+
+```bash
+java -jar target/DocGen-0.0.1-SNAPSHOT.jar --reportPath /absolute/path/to/output
+```
+
+Open:
+- `/absolute/path/to/output/rootpage.html`
+
+## CLI Usage
+### Required
+- `--reportPath <output_dir>`
+
+### Optional input/template overrides
+- `--rulesDir <path_to_crysl_rules>`
+- `--ftlTemplatesPath <path_to_ftl_templates>`
+- `--langTemplatesPath <path_to_lang_templates>`
+
+### Optional UI/content toggles
+Passing these flags hides/disables specific sections/features:
+- `--booleanA` hide state machine graph
+- `--booleanB` hide help button
+- `--booleanC` hide dependency tree sections
+- `--booleanD` hide CrySL rule section
+- `--booleanE` turn off graphviz generation
+- `--booleanF` copy CrySL rules into documentation output
+- `--booleanG` switch graph label style
+
+### Optional LLM toggles
+- `--disable-llm-explanations`
+- `--disable-llm-examples`
+- `--llm=<on|off|true|false|1|0>`
+- `--llm-explanations=<on|off|true|false|1|0>`
+- `--llm-examples=<on|off|true|false|1|0>`
+- `--llm-backend=<openai|ollama>`
+
+## Example Commands
+Disable all LLM features:
+
+```bash
+java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
+  --reportPath /absolute/path/to/output \
+  --llm=off
+```
+
+Use custom rule/template directories:
+
+```bash
+java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
+  --reportPath /absolute/path/to/output \
+  --rulesDir /absolute/path/to/rules \
+  --ftlTemplatesPath /absolute/path/to/ftl \
+  --langTemplatesPath /absolute/path/to/lang/templates
+```
+
+Use Ollama backend:
+
+```bash
+java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
+  --reportPath /absolute/path/to/output \
+  --llm-backend=ollama
+```
+
+## LLM Setup (Optional)
+The Java pipeline invokes Python scripts in `llm/` for LLM explanations/examples.
+
+Create and install Python environment:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+### OpenAI backend
+Set:
+
+```bash
+export OPENAI_API_KEY=<your_key>
+```
+
+Use:
+- `--llm-backend=openai`
+
+### Ollama backend
+Run an Ollama server and set endpoint (if non-default):
+
+```bash
+export OLLAMA_URL=http://localhost:11434
+```
+
+Optional environment variables used by sidecar scripts:
+- `OLLAMA_API_KEY`
+- `OLLAMA_MODEL`
+- `OLLAMA_EMB_MODEL`
+
+Use:
+- `--llm-backend=ollama`
+
+## Output and Cache Directories
+Primary output is written to `--reportPath`.
+
+Common generated folders:
+- `<reportPath>/composedRules/` (one HTML page per class)
+- `Output/resources/llm_cache/` (cached explanations)
+- `Output/resources/code_cache/` (cached secure/insecure examples)
+- `llm/sanitized_rules/` (sanitized rule JSON for LLM scripts)
+- `rag_cache/` (cached embeddings/chunks for PDF retrieval)
+
+## Notes
+- If no override paths are provided, bundled resources are used from `src/main/resources/**`.
+- LLM flags can overlap; later CLI args may override earlier ones.
+- The project includes historical thesis context, but this README reflects current implementation behavior.
