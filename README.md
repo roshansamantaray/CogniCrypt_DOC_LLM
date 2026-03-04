@@ -136,6 +136,34 @@ Optional environment variables used by sidecar scripts:
 Use:
 - `--llm-backend=ollama`
 
+### First-time run (required for LLM features)
+
+Before enabling LLM explanations/examples, do a one-time preprocessing run so the project generates **sanitized CrySL rule JSONs** (one per `.crysl` file). These are written to `llm/sanitized_rules/` and are consumed by the Python sidecar.
+
+1. **Run once with LLM off** (this creates `llm/sanitized_rules/*`):
+
+```bash
+java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
+  --reportPath /absolute/path/to/output \
+  --llm=off
+```
+
+2. **Delete the generated output folder** (so the next run starts clean):
+
+```bash
+rm -rf /absolute/path/to/output
+```
+
+3. **Run again with LLM on** (after completing the Python + backend setup below):
+
+```bash
+java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
+  --reportPath /absolute/path/to/output \
+  --llm=on
+```
+
+> Tip: you can also enable/disable explanations/examples separately with `--llm-explanations=...` and `--llm-examples=...`.
+
 ## Output and Cache Directories
 Primary output is written to `--reportPath`.
 
