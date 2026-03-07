@@ -175,8 +175,8 @@ Primary output is written to `--reportPath`.
 
 Common generated folders:
 - `<reportPath>/composedRules/` (one HTML page per class)
-- `Output/resources/llm_cache/` (cached explanations)
-- `Output/resources/code_cache/` (cached secure/insecure examples)
+- `Output/resources/llm_cache/` (cached explanations, keyed by backend + chat/embedding model + language)
+- `Output/resources/code_cache/` (cached secure/insecure examples, keyed by mode + model profile)
 - `llm/sanitized_rules/` (sanitized rule JSON for LLM scripts)
 - `rag_cache/` (cached embeddings/chunks for PDF retrieval)
 

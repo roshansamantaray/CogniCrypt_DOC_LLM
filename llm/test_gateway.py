@@ -25,6 +25,8 @@ def _require(value: str, name: str) -> str:
 
 
 def main() -> int:
+    load_dotenv()
+
     parser = argparse.ArgumentParser(
         description="Minimal UPB AI-Gateway connectivity test (models/chat/embeddings)."
     )
@@ -64,8 +66,6 @@ def main() -> int:
         help="Skip embeddings test.",
     )
     args = parser.parse_args()
-
-    load_dotenv()
 
     api_key = os.getenv("GATEWAY_API_KEY")
     base_url = os.getenv("GATEWAY_BASE_URL", DEFAULT_GATEWAY_BASE_URL)

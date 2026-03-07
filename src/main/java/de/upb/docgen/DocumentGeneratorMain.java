@@ -10,6 +10,7 @@ import crypto.rules.CrySLRule;
 import crypto.rules.CrySLRuleReader;
 import de.upb.docgen.crysl.CrySLReader;
 import de.upb.docgen.llm.CrySLToLLMGenerator;
+import de.upb.docgen.llm.LLMService;
 import de.upb.docgen.utils.*;
 import de.upb.docgen.writer.FreeMarkerWriter;
 import freemarker.template.*;
@@ -220,31 +221,26 @@ public class DocumentGeneratorMain {
                 Map<String, String> explanationMap = new HashMap<>();
 
                 for (String lang : LANGUAGES) {
-                    String fileName = fileSafeName + "_" + lang + ".txt";
+                    String fileName = LLMService.explanationCacheFileName(fileSafeName, lang, docSettings.getLlmBackend());
                     File cacheFile = new File(cacheDir, fileName);
-
-                    // Retrieve the explanation produced by the generator (adapt getter if different)
                     String explanation;
 
                     if (docSettings.isGenLllmExplanations()) {
-                        explanation = composedRule.getLlmExplanation() != null
+                        String generatedExplanation = composedRule.getLlmExplanation() != null
                                 ? composedRule.getLlmExplanation().get(lang)
                                 : null;
 
-                        if (explanation == null || explanation.isBlank()) {
+                        if (generatedExplanation == null || generatedExplanation.isBlank()) {
                             explanation = "No explanation generated for " + ruleName + " (" + lang + ").";
+                            System.out.println(fileName + " not written (no generated explanation).");
+                        } else {
+                            explanation = generatedExplanation;
+                            // Keep cache fresh for the selected backend/model profile.
+                            Files.writeString(cacheFile.toPath(), explanation);
+                            System.out.println(fileName + " written.");
                         }
                     } else {
                         explanation = "LLM explanations disabled by flag.";
-                    }
-
-                    if (!cacheFile.exists()) {
-                        Files.writeString(cacheFile.toPath(), explanation);
-                        System.out.println(fileName + " written.");
-                    } else {
-                        // Optional: refresh from disk to keep consistency
-                        explanation = Files.readString(cacheFile.toPath());
-                        System.out.println(fileName + " already exists.");
                     }
 
                     explanationMap.put(lang, explanation);
@@ -264,8 +260,8 @@ public class DocumentGeneratorMain {
                 ComposedRule composedRule = composedRuleList.get(i);
                 String ruleName = rule.getClassName().replaceAll("[^a-zA-Z0-9.\\-]", "_");
 
-                File secureFile = new File(codeCacheDir, ruleName + "_secure.txt");
-                File insecureFile = new File(codeCacheDir, ruleName + "_insecure.txt");
+                File secureFile = new File(codeCacheDir, LLMService.exampleCacheFileName(ruleName, "secure"));
+                File insecureFile = new File(codeCacheDir, LLMService.exampleCacheFileName(ruleName, "insecure"));
 
                 String secure;
                 String insecure;

@@ -42,6 +42,104 @@ public class LLMService {
         return isWindows() ? "python" : "python3";
     }
 
+    private static String sanitizeCacheToken(String value, String fallback) {
+        String raw = value == null ? "" : value.trim();
+        String cleaned = raw.replaceAll("[^a-zA-Z0-9._-]+", "_").replaceAll("^[_\\.-]+|[_\\.-]+$", "");
+        return cleaned.isEmpty() ? fallback : cleaned;
+    }
+
+    private static String envOrDefault(String envName, String fallback) {
+        String value = System.getenv(envName);
+        if (value == null || value.trim().isEmpty()) {
+            return fallback;
+        }
+        return value.trim();
+    }
+
+    private static String explanationChatModel(String backend) {
+        if ("gateway".equalsIgnoreCase(backend)) {
+            return envOrDefault("GATEWAY_CHAT_MODEL", "gwdg.llama-3.3-70b-instruct");
+        }
+        return "gpt-4o-mini";
+    }
+
+    private static String explanationEmbeddingModel(String backend) {
+        if ("gateway".equalsIgnoreCase(backend)) {
+            return envOrDefault("GATEWAY_EMB_MODEL", "YOUR_EMBEDDING_MODEL");
+        }
+        return "text-embedding-3-small";
+    }
+
+    public static String explanationCacheFileName(String classNameSafe, String lang, String backend) {
+        String backendTag = sanitizeCacheToken(backend, "backend");
+        String chatModelTag = sanitizeCacheToken(explanationChatModel(backend), "chat");
+        String embModelTag = sanitizeCacheToken(explanationEmbeddingModel(backend), "emb");
+        String langTag = sanitizeCacheToken(lang, "lang");
+        return classNameSafe + "__expl__" + backendTag + "__" + chatModelTag + "__" + embModelTag + "__" + langTag + ".txt";
+    }
+
+    public static String exampleCacheFileName(String classNameSafe, String mode) {
+        String providerTag = "openai";
+        String modelTag = sanitizeCacheToken("gpt-4o-mini", "model");
+        String modeTag = sanitizeCacheToken(mode, "mode");
+        return classNameSafe + "__example__" + providerTag + "__" + modelTag + "__" + modeTag + ".txt";
+    }
+
+    private static String executeProcessWithTimeout(
+            ProcessBuilder processBuilder,
+            long timeoutSeconds,
+            String timeoutErrorMessage,
+            String nonZeroExitErrorPrefix
+    ) throws IOException {
+        Process process = processBuilder.start();
+        StringBuffer output = new StringBuffer();
+
+        Thread outputReader = new Thread(() -> {
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    output.append(line).append('\n');
+                }
+            } catch (IOException ignored) {
+                // Best effort capture; process exit handling is authoritative.
+            }
+        }, "llm-process-output-reader");
+        outputReader.setDaemon(true);
+        outputReader.start();
+
+        final boolean finished;
+        try {
+            finished = process.waitFor(timeoutSeconds, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+            throw new IOException("Interrupted while waiting for LLM python process", e);
+        }
+
+        if (!finished) {
+            process.destroyForcibly();
+            try {
+                outputReader.join(2000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+            throw new IOException(timeoutErrorMessage + ". Partial output: " + output);
+        }
+
+        try {
+            outputReader.join(2000);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        int exit = process.exitValue();
+        if (exit != 0) {
+            throw new IOException(nonZeroExitErrorPrefix + exit + ". Output: " + output);
+        }
+        return output.toString().trim();
+    }
+
     /**
      * Generate multilingual explanations via the Python LLM sidecar with caching.
      */
@@ -80,18 +178,14 @@ public class LLMService {
             String classNameSafe = className.replaceAll("[^a-zA-Z0-9.\\-]", "_");
             String json = gson.toJson(cryslData);
             Path tempIn = tempFolder.resolve("temp_rule_" + classNameSafe + "_" + lang + ".json");
-            if (!Files.exists(tempIn)) {
-                try (OutputStreamWriter writer = new OutputStreamWriter(Files.newOutputStream(tempIn), StandardCharsets.UTF_8)) {
-                    writer.write(json);
-                }
+            try (OutputStreamWriter writer = new OutputStreamWriter(Files.newOutputStream(tempIn), StandardCharsets.UTF_8)) {
+                writer.write(json);
             }
             Path sanitizedOut = sanitizedFolder.resolve("sanitized_rule_" + classNameSafe + "_" + lang + ".json");
-            if (!Files.exists(sanitizedOut)) {
-                Utils.sanitizeRuleFileSecure(tempIn, sanitizedOut, base);
-            }
+            Utils.sanitizeRuleFileSecure(tempIn, sanitizedOut, base);
 
             // Use cached explanation if available.
-            Path cacheFile = cacheFolder.resolve(classNameSafe + "_" + lang + ".txt");
+            Path cacheFile = cacheFolder.resolve(explanationCacheFileName(classNameSafe, lang, backend));
             if (Files.exists(cacheFile)) {
                 String cached = Files.readString(cacheFile, StandardCharsets.UTF_8);
                 result.put(lang, cached.trim());
@@ -109,35 +203,12 @@ public class LLMService {
             pb.directory(projectRoot);
             pb.redirectErrorStream(true);
             pb.environment().put("PYTHONIOENCODING", "utf-8");
-
-            Process process = pb.start();
-            StringBuilder output = new StringBuilder();
-            try (BufferedReader reader =
-                         new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    output.append(line).append('\n');
-                }
-            }
-
-            // Enforce a time limit for LLM calls.
-            try {
-                boolean finished = process.waitFor(60, TimeUnit.SECONDS);
-                if (!finished) {
-                    process.destroyForcibly();
-                    throw new IOException("LLM python process timed out for " + className + " / " + lang);
-                }
-                int exit = process.exitValue();
-                if (exit != 0) {
-                    // still return output, but annotate or throw depending on desired behavior
-                    throw new IOException("LLM python process exited with code " + exit + " for " + className + " / " + lang + ". Output: " + output.toString());
-                }
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new IOException("Interrupted while waiting for LLM python process", e);
-            }
-
-            String outStr = output.toString().trim();
+            String outStr = executeProcessWithTimeout(
+                    pb,
+                    60,
+                    "LLM python process timed out for " + className + " / " + lang,
+                    "LLM python process exited with code for " + className + " / " + lang + ": "
+            );
             result.put(lang, outStr);
             // cache write (optional)
             try (OutputStreamWriter cw = new OutputStreamWriter(Files.newOutputStream(cacheFile), StandardCharsets.UTF_8)) {
@@ -179,33 +250,12 @@ public class LLMService {
         );
         pb.directory(PROJECT_ROOT.toFile());
         pb.redirectErrorStream(true);
-
-        Process process = pb.start();
-        StringBuilder output = new StringBuilder();
-        try (BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            String line;
-            while ((line = reader.readLine()) != null) {
-                output.append(line).append('\n');
-            }
-        }
-
-        // Enforce a time limit for example generation.
-        try {
-            boolean finished = process.waitFor(60, TimeUnit.SECONDS);
-            if (!finished) {
-                process.destroyForcibly();
-                throw new IOException("LLM python example process timed out for type " + type);
-            }
-            int exit = process.exitValue();
-            if (exit != 0) {
-                throw new IOException("LLM python example process exited with code " + exit + ". Output: " + output.toString());
-            }
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IOException("Interrupted while waiting for LLM python example process", e);
-        }
-
-        return output.toString().trim();
+        return executeProcessWithTimeout(
+                pb,
+                60,
+                "LLM python example process timed out for type " + type,
+                "LLM python example process exited with code "
+        );
     }
 
 }
