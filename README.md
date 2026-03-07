@@ -71,7 +71,7 @@ Passing these flags hides/disables specific sections/features:
 - `--llm=<on|off|true|false|1|0>`
 - `--llm-explanations=<on|off|true|false|1|0>`
 - `--llm-examples=<on|off|true|false|1|0>`
-- `--llm-backend=<openai|ollama>`
+- `--llm-backend=<openai|gateway>`
 
 ## Example Commands
 Disable all LLM features:
@@ -92,12 +92,12 @@ java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
   --langTemplatesPath /absolute/path/to/lang/templates
 ```
 
-Use Ollama backend:
+Use Gateway backend:
 
 ```bash
 java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
   --reportPath /absolute/path/to/output \
-  --llm-backend=ollama
+  --llm-backend=gateway
 ```
 
 ## LLM Setup (Optional)
@@ -121,20 +121,26 @@ export OPENAI_API_KEY=<your_key>
 Use:
 - `--llm-backend=openai`
 
-### Ollama backend
-Run an Ollama server and set endpoint (if non-default):
+Notes:
+- OpenAI backend is used for explanations and code examples.
+- `OPENAI_API_KEY` is required when examples are enabled.
+
+### Gateway backend (UPB AI-Gateway)
+Set:
 
 ```bash
-export OLLAMA_URL=http://localhost:11434
+export GATEWAY_API_KEY=<your_gateway_key>
+export GATEWAY_BASE_URL=https://ai-gateway.uni-paderborn.de/v1/
+export GATEWAY_CHAT_MODEL=<gateway_chat_model>
+export GATEWAY_EMB_MODEL=<gateway_embedding_model>
 ```
 
-Optional environment variables used by sidecar scripts:
-- `OLLAMA_API_KEY`
-- `OLLAMA_MODEL`
-- `OLLAMA_EMB_MODEL`
-
 Use:
-- `--llm-backend=ollama`
+- `--llm-backend=gateway`
+
+Notes:
+- Gateway backend is used only for explanations.
+- Secure/insecure code examples still use OpenAI scripts and therefore still require `OPENAI_API_KEY` if examples are enabled.
 
 ### First-time run (required for LLM features)
 

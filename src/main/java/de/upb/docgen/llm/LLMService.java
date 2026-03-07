@@ -48,7 +48,14 @@ public class LLMService {
     public static Map<String, String> getLLMExplanation(Map<String, String> cryslData, List<String> LANGUAGES, String backend) throws IOException {
         Gson gson = new Gson();
         // Choose backend-specific Python script.
-        String pythonScriptPath = backend.equalsIgnoreCase("openai") ? "llm/llm_writer.py" : "llm/llm_writer_ollama.py";
+        String pythonScriptPath;
+        if (backend.equalsIgnoreCase("openai")) {
+            pythonScriptPath = "llm/llm_writer.py";
+        } else if (backend.equalsIgnoreCase("gateway")) {
+            pythonScriptPath = "llm/llm_writer_gateway.py";
+        } else {
+            throw new IOException("Unsupported LLM backend: " + backend);
+        }
         Map<String, String> result = new HashMap<>();
 
         // Prepare temp/sanitized folders under llm/.
