@@ -7,8 +7,6 @@ It converts formal CrySL usage specifications into developer-facing pages (overv
 
 The documentation entry page is `rootpage.html` inside your configured output directory.
 
-For a deeper architecture walkthrough, see `PROJECT_GUIDE.md`.
-
 ## What This Project Contains
 - Java documentation pipeline (`src/main/java/de/upb/docgen/**`)
 - FreeMarker templates for HTML rendering (`src/main/resources/FTLTemplates/**`)
