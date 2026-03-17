@@ -4,6 +4,7 @@ from typing import List
 import numpy as np
 from openai import OpenAI
 
+from utils.gateway_rate_limit import wait_for_gateway_slot
 from utils.rag_index_common import (
     DocChunk,
     EmbeddingIndex,
@@ -31,6 +32,7 @@ def _embed_texts(client: OpenAI, texts: List[str], model: str) -> np.ndarray:
     """Return a float32 embedding matrix for `texts` using one batched request."""
     if not texts:
         return np.empty((0, 0), dtype="float32")
+    wait_for_gateway_slot("embeddings")
     resp = client.embeddings.create(model=model, input=texts)
     return np.asarray([d.embedding for d in resp.data], dtype="float32")
 

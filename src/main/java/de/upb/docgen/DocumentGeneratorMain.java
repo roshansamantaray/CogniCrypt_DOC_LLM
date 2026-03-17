@@ -356,7 +356,7 @@ public class DocumentGeneratorMain {
                             System.out.println(ruleName + "_insecure.txt contains placeholder; regenerating.");
                         }
                         try {
-                            CrySLToLLMGenerator.generateExample(List.of(composedRule), List.of(rule));
+                            CrySLToLLMGenerator.generateExample(List.of(composedRule), List.of(rule), docSettings.getLlmBackend());
                             generatedSecure = cleanLLMCodeBlock(
                                     composedRule.getSecureExample() != null ? composedRule.getSecureExample() : "");
                             generatedInsecure = cleanLLMCodeBlock(

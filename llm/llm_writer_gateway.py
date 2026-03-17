@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
+import os
 import sys
 from pathlib import Path
 from typing import Dict, List
 
 import numpy as np
+from dotenv import load_dotenv
 from openai import OpenAI
 
-from paper_index_gateway import build_pdf_index, get_gateway_client
+from utils.gateway_rate_limit import wait_for_gateway_slot
 from utils.writer_core import (
     WriterCLIConfig,
     build_explanation_prompt,
@@ -24,10 +26,21 @@ except Exception:
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RULES_DIR = PROJECT_ROOT / "src" / "main" / "resources" / "CrySLRules"
 PDF_PATH = PROJECT_ROOT / "tse19CrySL.pdf"
+DEFAULT_GATEWAY_BASE_URL = "https://ai-gateway.uni-paderborn.de/v1/"
+
+
+def get_gateway_client() -> OpenAI:
+    """Return an OpenAI-compatible client configured for the UPB gateway."""
+    api_key = os.getenv("GATEWAY_API_KEY")
+    if not api_key:
+        raise RuntimeError("GATEWAY_API_KEY is not set.")
+    base_url = os.getenv("GATEWAY_BASE_URL", DEFAULT_GATEWAY_BASE_URL)
+    return OpenAI(api_key=api_key, base_url=base_url)
 
 
 def _embed_texts(client: OpenAI, texts: List[str], model: str = "YOUR_EMBEDDING_MODEL") -> np.ndarray:
     """Return float32 embeddings for a list of strings using a gateway embedding model."""
+    wait_for_gateway_slot("embeddings")
     resp = client.embeddings.create(model=model, input=texts)
     return np.asarray([d.embedding for d in resp.data], dtype="float32")
 
@@ -128,6 +141,7 @@ def generate_explanation(
     )
 
     sys_msgs = build_system_messages(rag_block)
+    wait_for_gateway_slot("chat.completions")
     resp = client.chat.completions.create(
         model=model,
         messages=sys_msgs + [{"role": "user", "content": prompt}],
@@ -164,11 +178,43 @@ def process_rule(
     )
 
 
+def list_gateway_models() -> int:
+    """List available gateway model IDs via the OpenAI-compatible models endpoint."""
+    load_dotenv()
+    try:
+        client = get_gateway_client()
+        wait_for_gateway_slot("models.list")
+        resp = client.models.list()
+        model_ids = sorted(
+            {
+                getattr(item, "id", "").strip()
+                for item in getattr(resp, "data", [])
+                if getattr(item, "id", None)
+            }
+        )
+        for model_id in model_ids:
+            print(model_id)
+        return 0
+    except Exception as exc:
+        print(f"[ERROR] Failed to list gateway models: {exc}", file=sys.stderr)
+        return 1
+
+
 def main():
     """CLI entrypoint for gateway-backed explanation generation."""
+    if "--list-models" in sys.argv[1:]:
+        extra_args = [arg for arg in sys.argv[1:] if arg != "--list-models"]
+        if extra_args:
+            print("[ERROR] --list-models must be used without additional arguments.", file=sys.stderr)
+            sys.exit(2)
+        sys.exit(list_gateway_models())
+
+    # Lazy import keeps `--list-models` usable without optional FAISS dependency.
+    from paper_index_gateway import build_pdf_index
+
     cli_config = WriterCLIConfig(
         description="Generate CrySL rule explanations via UPB AI-Gateway",
-        model_default="gwdg.llama-3.3-70b-instruct",
+        model_default="gwdg.qwen3-30b-a3b-instruct-2507",
         model_help="Gateway model to use for completions",
         pdf_default=PDF_PATH,
         emb_model_default="YOUR_EMBEDDING_MODEL",

@@ -13,7 +13,7 @@ import numpy as np
 from dotenv import load_dotenv
 from openai import OpenAI
 
-from paper_index import build_pdf_index
+from utils.gateway_rate_limit import wait_for_gateway_slot
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
@@ -28,6 +28,10 @@ SANITIZED_DIR = PROJECT_ROOT / "llm" / "sanitized_rules"
 PDF_PATH = PROJECT_ROOT / "tse19CrySL.pdf"
 FILENAME_TEMPLATE = "sanitized_rule_{fqcn}_{lang}.json"
 SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
+
+DEFAULT_GATEWAY_BASE_URL = "https://ai-gateway.uni-paderborn.de/v1/"
+OPENAI_DEFAULT_CHAT_MODEL = "gpt-4o-mini"
+OPENAI_DEFAULT_EMB_MODEL = "text-embedding-3-small"
 
 
 # Cache for sanitized rules to avoid repeated disk IO.
@@ -67,6 +71,54 @@ SECTION_NAMES = [
     "ENSURES",
     "FORBIDDEN",
 ]
+
+
+def _require_env(var_name: str) -> str:
+    value = os.getenv(var_name, "").strip()
+    if not value:
+        raise RuntimeError(f"{var_name} is not set.")
+    return value
+
+
+def _build_client_for_backend(backend: str) -> OpenAI:
+    if backend == "openai":
+        return OpenAI(api_key=_require_env("OPENAI_API_KEY"))
+    api_key = _require_env("GATEWAY_API_KEY")
+    base_url = os.getenv("GATEWAY_BASE_URL", DEFAULT_GATEWAY_BASE_URL).strip() or DEFAULT_GATEWAY_BASE_URL
+    return OpenAI(api_key=api_key, base_url=base_url)
+
+
+def _resolve_models_for_backend(backend: str, chat_model_arg: Optional[str], emb_model_arg: Optional[str]) -> Tuple[str, str]:
+    chat_model_cli = (chat_model_arg or "").strip()
+    emb_model_cli = (emb_model_arg or "").strip()
+
+    if backend == "openai":
+        chat_model = chat_model_cli or OPENAI_DEFAULT_CHAT_MODEL
+        emb_model = emb_model_cli or OPENAI_DEFAULT_EMB_MODEL
+        return chat_model, emb_model
+
+    chat_model = chat_model_cli or os.getenv("GATEWAY_CHAT_MODEL", "").strip()
+    emb_model = emb_model_cli or os.getenv("GATEWAY_EMB_MODEL", "").strip()
+    if not chat_model:
+        raise RuntimeError("GATEWAY_CHAT_MODEL is not set (or pass --model) for gateway backend.")
+    if not emb_model:
+        raise RuntimeError("GATEWAY_EMB_MODEL is not set (or pass --emb-model) for gateway backend.")
+    return chat_model, emb_model
+
+
+def _maybe_throttle_gateway(backend: str, operation: str) -> None:
+    if backend == "gateway":
+        wait_for_gateway_slot(operation)
+
+
+def _resolve_pdf_index_builder(backend: str):
+    """Lazy-load provider index builders so backend validation can fail fast without optional FAISS imports."""
+    if backend == "gateway":
+        from paper_index_gateway import build_pdf_index as build_pdf_index_impl
+    else:
+        from paper_index import build_pdf_index as build_pdf_index_impl
+    return build_pdf_index_impl
+
 
 # Normalize whitespace in large text blocks.
 def _clean_text(s: str) -> str:
@@ -402,7 +454,13 @@ def retrieve_top_k(idx, chunks, query_embedding, k: int = 2, per_chunk_max: int 
     return results
     
 # Build or load a short CrySL primer (semantics-only), optionally augmented via RAG.
-def load_crysl_primer(pdf_path: Optional[Path], emb_model: str, cache_dir: Path) -> str:
+def load_crysl_primer(
+    pdf_path: Optional[Path],
+    emb_model: str,
+    cache_dir: Path,
+    backend: str,
+    client: OpenAI,
+) -> str:
     """
     Returns a short, stable CrySL primer (semantics-only).
     Uses the built-in primer as a stable scaffold, then optionally appends a few
@@ -410,7 +468,8 @@ def load_crysl_primer(pdf_path: Optional[Path], emb_model: str, cache_dir: Path)
     """
     try:
         cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_file = cache_dir / f"crysl_primer_{emb_model}.txt"
+        model_tag = re.sub(r"[^A-Za-z0-9_.-]+", "_", emb_model).strip("._-") or "model"
+        cache_file = cache_dir / f"crysl_primer_{backend}_{model_tag}.txt"
         if cache_file.exists():
             return cache_file.read_text(encoding="utf-8").strip()
 
@@ -425,8 +484,8 @@ def load_crysl_primer(pdf_path: Optional[Path], emb_model: str, cache_dir: Path)
             cache_file.write_text(primer, encoding="utf-8")
             return primer
 
-        idx, chunks = build_pdf_index(str(pdf_path), emb_model=emb_model)
-        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        build_pdf_index_fn = _resolve_pdf_index_builder(backend)
+        idx, chunks = build_pdf_index_fn(str(pdf_path), emb_model=emb_model)
 
         topic_queries = [
             "CrySL overview for developers: what are SPEC, OBJECTS, EVENTS, ORDER, CONSTRAINTS, REQUIRES, ENSURES, FORBIDDEN?",
@@ -526,6 +585,7 @@ def load_crysl_primer(pdf_path: Optional[Path], emb_model: str, cache_dir: Path)
         seen = set()
 
         for q in topic_queries:
+            _maybe_throttle_gateway(backend, "embeddings")
             q_emb = client.embeddings.create(model=emb_model, input=q).data[0].embedding
             candidates = retrieve_top_k(idx, chunks, q_emb, k=8, per_chunk_max=900)
 
@@ -874,9 +934,10 @@ def compile_java(java_code: str, compile_classpath: Optional[str], java_release:
 def process_rule(
     json_path: Path,
     language: str,
-    model: str,
+    backend: str,
+    model: Optional[str],
     pdf_path: Optional[Path],
-    emb_model: str,
+    emb_model: Optional[str],
     rules_dir: Path,
     compile_classpath: Optional[str],
     java_release: str,
@@ -897,6 +958,13 @@ def process_rule(
     class_name = rule_payload.get("className")
     if not class_name:
         print("rule JSON missing className", file=sys.stderr)
+        return None
+
+    try:
+        client = _build_client_for_backend(backend)
+        resolved_model, resolved_emb_model = _resolve_models_for_backend(backend, model, emb_model)
+    except Exception as exc:
+        print(f"Backend/model configuration error: {exc}", file=sys.stderr)
         return None
 
     preferred_langs = [language]
@@ -950,8 +1018,10 @@ def process_rule(
     effective_pdf_path = pdf_path if (pdf_path and pdf_path.exists()) else PDF_PATH
     crysl_primer = load_crysl_primer(
         pdf_path=effective_pdf_path,
-        emb_model=emb_model,
+        emb_model=resolved_emb_model,
         cache_dir=PROJECT_ROOT / "rag_cache",
+        backend=backend,
+        client=client,
     )
 
     prompt_ctx = {
@@ -975,9 +1045,9 @@ def process_rule(
         }
     ]
 
-    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+    _maybe_throttle_gateway(backend, "chat.completions")
     response = client.chat.completions.create(
-        model=model,
+        model=resolved_model,
         messages=system_messages + [{"role": "user", "content": prompt}],
         temperature=0.0,
         max_tokens=2000,
@@ -1027,8 +1097,9 @@ def process_rule(
                 + "\n```"
             )
 
+            _maybe_throttle_gateway(backend, "chat.completions")
             repair_resp = client.chat.completions.create(
-                model=model,
+                model=resolved_model,
                 messages=system_messages + [{"role": "user", "content": repair_prompt}],
                 temperature=0.0,
                 max_tokens=2000,
@@ -1083,11 +1154,21 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("json_path", help="Path to the temp JSON produced by the Java pipeline.")
     parser.add_argument(
+        "--backend",
+        choices=["openai", "gateway"],
+        required=True,
+        help="LLM backend selected by the Java pipeline.",
+    )
+    parser.add_argument(
         "--language",
         default="English",
         help="Language used for sanitized rules (used only for dependency context).",
     )
-    parser.add_argument("--model", default="gpt-4o-mini", help="OpenAI chat model for code generation.")
+    parser.add_argument(
+        "--model",
+        default=None,
+        help="Override chat model (gateway requires this or GATEWAY_CHAT_MODEL).",
+    )
     parser.add_argument(
         "--pdf",
         default=str(PDF_PATH),
@@ -1095,8 +1176,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--emb-model",
-        default="text-embedding-3-small",
-        help="Embedding model used for primer retrieval from the CrySL PDF.",
+        default=None,
+        help="Override embedding model (gateway requires this or GATEWAY_EMB_MODEL).",
     )
     parser.add_argument(
         "--compile-classpath",
@@ -1123,9 +1204,10 @@ def main() -> None:
     compile_classpath = args.compile_classpath
     java_release = str(args.java_release)
 
-    process_rule(
+    result = process_rule(
         json_path=json_path,
         language=language,
+        backend=args.backend,
         model=args.model,
         pdf_path=pdf_path,
         emb_model=args.emb_model,
@@ -1133,6 +1215,8 @@ def main() -> None:
         compile_classpath=compile_classpath,
         java_release=java_release,
     )
+    if result is None:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

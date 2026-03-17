@@ -214,11 +214,16 @@ public class LLMService {
     /**
      * Generate a secure or insecure example via the Python sidecar.
      */
-    public static String getLLMExample(Map<String, String> cryslData, String type) throws IOException {
+    public static String getLLMExample(Map<String, String> cryslData, String type, String backend) throws IOException {
         // Mark the request type (secure/insecure) and write a temp JSON input.
         cryslData.put("exampleType", type);
         Gson gson = new Gson();
         String json = gson.toJson(cryslData);
+
+        String backendNormalized = backend == null ? "" : backend.trim().toLowerCase(Locale.ROOT);
+        if (!backendNormalized.equals("openai") && !backendNormalized.equals("gateway")) {
+            throw new IOException("Unsupported LLM backend for examples: " + backend);
+        }
 
         Path tempFile = PROJECT_ROOT.resolve("llm").resolve("temp_example_" + type + ".json");
         Files.createDirectories(tempFile.getParent());
@@ -237,6 +242,7 @@ public class LLMService {
                 pythonPath,
                 pythonScriptPath,
                 tempFile.toString(),
+                "--backend", backendNormalized,
                 "--rules-dir", rulesDir
         ));
         if ("secure".equalsIgnoreCase(type)) {

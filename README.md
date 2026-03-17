@@ -135,7 +135,7 @@ Use:
 
 Notes:
 - OpenAI backend is used for explanations and code examples.
-- `OPENAI_API_KEY` is required when examples are enabled.
+- `OPENAI_API_KEY` is required when running with `--llm-backend=openai`.
 
 ### Gateway backend (UPB AI-Gateway)
 Set:
@@ -145,14 +145,24 @@ export GATEWAY_API_KEY=<your_gateway_key>
 export GATEWAY_BASE_URL=https://ai-gateway.uni-paderborn.de/v1/
 export GATEWAY_CHAT_MODEL=<gateway_chat_model>
 export GATEWAY_EMB_MODEL=<gateway_embedding_model>
+export GATEWAY_RPM=10
 ```
 
 Use:
 - `--llm-backend=gateway`
 
+Discover available gateway models:
+
+```bash
+python llm/llm_writer_gateway.py --list-models
+```
+
 Notes:
-- Gateway backend is used only for explanations.
-- Secure/insecure code examples still use OpenAI scripts and therefore still require `OPENAI_API_KEY` if examples are enabled.
+- Gateway backend is used for both explanations and secure/insecure code examples.
+- Example scripts are invoked internally with `--backend=<openai|gateway>` from Java; no fallback to OpenAI is performed in gateway mode.
+- For gateway-backed examples, set `GATEWAY_CHAT_MODEL` and `GATEWAY_EMB_MODEL` (or pass explicit script overrides).
+- If `GATEWAY_CHAT_MODEL` is unset, the gateway explanation default is `gwdg.qwen3-30b-a3b-instruct-2507`.
+- Gateway requests (chat + embeddings, including examples) are throttled client-side using a shared cross-process limiter with default `GATEWAY_RPM=10` (set `GATEWAY_RPM` to override).
 
 ### First-time run (required for LLM features)
 
