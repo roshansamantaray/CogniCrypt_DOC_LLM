@@ -1,12 +1,12 @@
-import os
+#!/usr/bin/env python3
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List
 
 import numpy as np
 from openai import OpenAI
 
-from paper_index import build_pdf_index
+from paper_index_gateway import build_pdf_index, get_gateway_client
 from utils.writer_core import (
     WriterCLIConfig,
     build_explanation_prompt,
@@ -16,48 +16,32 @@ from utils.writer_core import (
 )
 
 try:
-    # ensure Python stdout uses UTF-8 (Python 3.7+)
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
-    # fallback: rely on caller to set PYTHONIOENCODING
     pass
 
 
-# Resolve project root and important folders
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RULES_DIR = PROJECT_ROOT / "src" / "main" / "resources" / "CrySLRules"
 PDF_PATH = PROJECT_ROOT / "tse19CrySL.pdf"
 
 
-# Embed text with OpenAI embeddings and return a float32 matrix.
-def _embed_texts(client: OpenAI, texts: List[str], model: str = "text-embedding-3-small") -> np.ndarray:
-    """Return float32 embeddings for a list of strings using an OpenAI embedding model."""
+def _embed_texts(client: OpenAI, texts: List[str], model: str = "YOUR_EMBEDDING_MODEL") -> np.ndarray:
+    """Return float32 embeddings for a list of strings using a gateway embedding model."""
     resp = client.embeddings.create(model=model, input=texts)
     return np.asarray([d.embedding for d in resp.data], dtype="float32")
 
 
-# Build RAG context using the CrySL paper index and this rule's sections.
 def make_rag_context(
     client: OpenAI,
-    idx,  # from paper_index.build_pdf_index
-    chunks,  # list of DocChunk (must have .text)
+    idx,
+    chunks,
     emb_model: str,
     rule_sections_txt: Dict[str, str],
     k: int = 6,
-    per_chunk_max: int = 900,  # optional: trim long chunks
+    per_chunk_max: int = 900,
 ) -> str:
-    """
-    Build a retrieval context block from top-k CrySL-paper chunks.
-
-    Inputs:
-    - client: OpenAI client used only for query embedding.
-    - idx/chunks: FAISS-backed index and aligned chunk metadata from paper_index.
-    - rule_sections_txt: normalized CrySL sections for the current rule.
-    Returns:
-    - rag_block: concatenated snippets tagged [C1], [C2], ...
-    """
-
-    # 1) Bias retrieval toward CrySL grammar/semantics (so we explain the SYNTAX)
+    """Build a retrieval context block from top-k CrySL-paper chunks."""
     syntax_boost = """
     CRYSL language syntax and semantics:
     - Sections: SPEC, OBJECTS, EVENTS, ORDER, CONSTRAINTS, REQUIRES, ENSURES, FORBIDDEN
@@ -68,7 +52,6 @@ def make_rag_context(
     - EBNF grammar and formal semantics
     """.strip()
 
-    # 2) Build the query using BOTH the syntax boost and this rule's actual sections
     query_text = "\n".join(
         [
             syntax_boost,
@@ -86,19 +69,12 @@ def make_rag_context(
     if not hasattr(idx, "index") or idx.index is None or not chunks:
         return ""
 
-    # 3) Embed and search through the shared abstraction.
-    # Using `idx.search(...)` aligns OpenAI and gateway adapters on one retrieval contract:
-    # both receive ordered `(chunk_id, score)` hits from EmbeddingIndex.
     qvec = _embed_texts(client, [query_text], model=emb_model)[0]
     hits = idx.search(qvec, k)
 
-    # 4) Build tagged snippets; normalize common PDF ligatures for safer display
     def _normalize_pdf_text(s: str) -> str:
-        """Normalize common PDF ligatures and soft hyphens for cleaner markdown output."""
         return s.replace("\ufb01", "fi").replace("\ufb02", "fl").replace("\u00ad", "").strip()
 
-    # Resolve FAISS hit ids to chunk objects via a dictionary instead of positional indexing.
-    # This avoids accidental coupling to list order and keeps mapping stable by chunk id.
     chunk_by_id = {getattr(c, "id", None): c for c in chunks}
     rag_snippets: List[str] = []
 
@@ -112,11 +88,9 @@ def make_rag_context(
             text = text[:per_chunk_max].rsplit(" ", 1)[0] + " ..."
         rag_snippets.append(f"{tag} {text}")
 
-    rag_block = "\n\n".join(rag_snippets) if rag_snippets else ""
-    return rag_block
+    return "\n\n".join(rag_snippets) if rag_snippets else ""
 
 
-# Build the LLM prompt and request a structured explanation.
 def generate_explanation(
     client: OpenAI,
     model: str,
@@ -135,8 +109,7 @@ def generate_explanation(
     explanation_language: str,
     rag_block: str = "",
 ) -> str:
-    """Generate a full natural-language rule explanation via OpenAI chat completion."""
-    # Build the strict user prompt that includes CrySL-derived fields and section requirements.
+    """Generate a full natural-language rule explanation via gateway chat completion."""
     prompt = build_explanation_prompt(
         class_name=class_name,
         objects=objects,
@@ -154,21 +127,16 @@ def generate_explanation(
         include_utf8_line=True,
     )
 
-    # Add base system guidance and optional hidden RAG reference material.
     sys_msgs = build_system_messages(rag_block)
-
-    # Single completion call for the final explanation text.
     resp = client.chat.completions.create(
         model=model,
         messages=sys_msgs + [{"role": "user", "content": prompt}],
         temperature=0.3,
         max_tokens=4000,
-        # No stop sequence to avoid accidental truncation on ``` blocks
     )
     return resp.choices[0].message.content
 
 
-# Orchestrate a single rule's explanation generation pipeline.
 def process_rule(
     crysl_path: str,
     language: str,
@@ -178,9 +146,9 @@ def process_rule(
     idx=None,
     chunks=None,
     k: int = 6,
-    emb_model: str = "text-embedding-3-small",
+    emb_model: str = "YOUR_EMBEDDING_MODEL",
 ):
-    """Run the shared single-rule pipeline with OpenAI-specific callbacks."""
+    """Run the shared single-rule pipeline with gateway-specific callbacks."""
     return process_rule_core(
         crysl_path=crysl_path,
         language=language,
@@ -196,29 +164,27 @@ def process_rule(
     )
 
 
-# CLI entrypoint: parse args, init OpenAI client, optional RAG index, and run.
 def main():
-    """CLI entrypoint for OpenAI-backed explanation generation."""
-    # Provider-specific defaults are injected into the shared CLI/runtime orchestrator.
+    """CLI entrypoint for gateway-backed explanation generation."""
     cli_config = WriterCLIConfig(
-        description="Generate CrySL rule explanations via LLM (with dependency ENSURES + constraints, optional RAG)",
-        model_default="gpt-4o-mini",
-        model_help="OpenAI model to use for completions",
+        description="Generate CrySL rule explanations via UPB AI-Gateway",
+        model_default="gwdg.llama-3.3-70b-instruct",
+        model_help="Gateway model to use for completions",
         pdf_default=PDF_PATH,
-        emb_model_default="text-embedding-3-small",
-        emb_model_help="Embedding model for RAG queries",
+        emb_model_default="YOUR_EMBEDDING_MODEL",
+        emb_model_help="Gateway embedding model for RAG queries",
+        model_env_var="GATEWAY_CHAT_MODEL",
+        emb_model_env_var="GATEWAY_EMB_MODEL",
     )
 
-    # Delegate argument parsing, CrySL resolution, optional RAG indexing, and processing.
     run_writer_main(
         rules_dir=RULES_DIR,
         cli_config=cli_config,
-        init_client_fn=lambda: OpenAI(api_key=os.getenv("OPENAI_API_KEY")),
+        init_client_fn=get_gateway_client,
         build_pdf_index_fn=build_pdf_index,
         process_rule_fn=process_rule,
     )
 
 
-# Standard entry guard for CLI usage.
 if __name__ == "__main__":
     main()
