@@ -9,7 +9,8 @@ Default placeholders:
 Usage:
   python3 scripts/delete_disabled_code_cache_files.py
   python3 scripts/delete_disabled_code_cache_files.py --dry-run
-  python3 scripts/delete_disabled_code_cache_files.py --cache-dir Output/resources/code_cache
+  python3 scripts/delete_disabled_code_cache_files.py --report-path /absolute/path/to/output
+  python3 scripts/delete_disabled_code_cache_files.py --cache-dir /custom/cache/dir
 """
 
 from __future__ import annotations
@@ -30,14 +31,25 @@ def normalized_content(path: Path) -> str:
     return text.strip()
 
 
+def resolve_cache_dir(report_path: str, cache_dir_override: str | None) -> Path:
+    if cache_dir_override:
+        return Path(cache_dir_override)
+    return Path(report_path) / "resources" / "code_cache"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Delete placeholder-only files from code cache."
     )
     parser.add_argument(
+        "--report-path",
+        default="Output",
+        help="Documentation output root used to derive default cache dir: <reportPath>/resources/code_cache.",
+    )
+    parser.add_argument(
         "--cache-dir",
-        default="Output/resources/code_cache",
-        help="Path to code cache directory (default: Output/resources/code_cache).",
+        default=None,
+        help="Optional explicit code cache directory. Overrides --report-path derived location.",
     )
     parser.add_argument(
         "--dry-run",
@@ -51,7 +63,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    cache_dir = Path(args.cache_dir)
+    cache_dir = resolve_cache_dir(args.report_path, args.cache_dir)
     if not cache_dir.is_dir():
         print(f"[error] Not a directory: {cache_dir}")
         return 1

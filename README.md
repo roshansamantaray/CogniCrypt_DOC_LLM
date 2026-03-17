@@ -200,10 +200,13 @@ Primary output is written to `--reportPath`.
 
 Common generated folders:
 - `<reportPath>/composedRules/` (one HTML page per class)
-- `Output/resources/llm_cache/` (cached explanations)
-- `Output/resources/code_cache/` (cached secure/insecure examples)
+- `<reportPath>/resources/llm_cache/` (cached explanations)
+- `<reportPath>/resources/code_cache/` (cached secure/insecure examples)
 - `llm/sanitized_rules/` (sanitized rule JSON for LLM scripts)
 - `rag_cache/` (cached embeddings/chunks for PDF retrieval)
+
+Code cache cleanup helper (optional):
+- `python3 scripts/delete_disabled_code_cache_files.py --report-path <reportPath>`
 
 ## Notes
 - If no override paths are provided, bundled resources are used from `src/main/resources/**`.

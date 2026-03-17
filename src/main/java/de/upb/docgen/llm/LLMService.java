@@ -9,6 +9,8 @@ import java.util.*;
 import java.util.regex.Pattern;
 import java.util.concurrent.TimeUnit;
 import com.google.gson.Gson;
+import de.upb.docgen.DocSettings;
+import de.upb.docgen.utils.CachePathResolver;
 import de.upb.docgen.utils.Utils;
 
 /**
@@ -128,8 +130,13 @@ public class LLMService {
         Files.createDirectories(tempFolder);
         Files.createDirectories(sanitizedFolder);
 
-        // Cache folder for explanation outputs.
-        Path cacheFolder = PROJECT_ROOT.resolve("Output").resolve("resources").resolve("llm_cache");
+        // Cache folder for explanation outputs under reportPath/resources.
+        Path cacheFolder;
+        try {
+            cacheFolder = CachePathResolver.resolveLlmCacheDir(DocSettings.getInstance().getReportDirectory());
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Unable to resolve LLM cache directory from --reportPath.", e);
+        }
         Files.createDirectories(cacheFolder);
 
         String pythonPath = resolvePythonExecutable();
