@@ -158,14 +158,17 @@ Notes:
 
 ### First-time run (required for LLM features)
 
-Before enabling LLM explanations/examples, do a one-time preprocessing run so the project generates **sanitized CrySL rule JSONs** (one per `.crysl` file). These are written to `llm/sanitized_rules/` and are consumed by the Python sidecar.
+Before setting API keys, run a one-time preprocessing pass to generate **sanitized CrySL rule JSONs** (one per `.crysl` file per language). These are written to `llm/sanitized_rules/` and are consumed by the Python sidecar.
 
-1. **Run once with LLM off** (this creates `llm/sanitized_rules/*`):
+Important: sanitized JSON generation is tied to the LLM explanation flow in `DocSettings`, so it must run with `--llm=on` (or explicitly `--llm-explanations=on`).
+
+1. **Run once without API keys, but with LLM enabled** (this generates `llm/sanitized_rules/*`):
 
 ```bash
 java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
   --reportPath /absolute/path/to/output \
-  --llm=off
+  --llm=on \
+  --llm-examples=off
 ```
 
 2. **Delete the generated output folder** (so the next run starts clean):
@@ -174,7 +177,7 @@ java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
 rm -rf /absolute/path/to/output
 ```
 
-3. **Run again with LLM on** (after completing the Python + backend setup below):
+3. **Configure your backend/API keys, then run again with LLM features as needed**:
 
 ```bash
 java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
@@ -182,7 +185,7 @@ java -jar target/DocGen-0.0.1-SNAPSHOT.jar \
   --llm=on
 ```
 
-> Tip: you can also enable/disable explanations/examples separately with `--llm-explanations=...` and `--llm-examples=...`.
+> Tip: you can enable/disable explanations/examples independently with `--llm-explanations=...` and `--llm-examples=...`.
 
 ## Output and Cache Directories
 Primary output is written to `--reportPath`.
