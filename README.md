@@ -17,7 +17,7 @@ For a deeper architecture walkthrough, see `PROJECT_GUIDE.md`.
 - Python LLM sidecar for explanation/code generation (`llm/**`)
 
 ## Prerequisites
-- Java 11
+- Java 21
 - Maven
 - Python 3 (required only for LLM features)
 
@@ -45,6 +45,20 @@ java -jar target/DocGen-0.0.1-SNAPSHOT.jar --reportPath /absolute/path/to/output
 
 Open:
 - `/absolute/path/to/output/rootpage.html`
+
+## Run Consistency (IDE + CLI)
+Canonical reproducible run path:
+
+```bash
+mvn clean compile
+mvn -DskipTests package
+java -jar target/DocGen-0.0.1-SNAPSHOT.jar --reportPath /absolute/path/to/output
+```
+
+For IntelliJ runs:
+- Reload Maven project after dependency changes.
+- Rebuild the project before running (`Build > Rebuild Project`).
+- If startup preflight reports missing classes, rebuild first and ensure the Maven classpath is active.
 
 ## CLI Usage
 ### Required

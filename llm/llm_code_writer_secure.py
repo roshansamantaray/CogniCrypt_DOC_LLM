@@ -687,6 +687,15 @@ IMPORT_WHITELIST = {
     "GeneralSecurityException": "java.security.GeneralSecurityException",
 }
 
+CANONICAL_IMPORT_REWRITES = {
+    "import java.security.spec.InvalidAlgorithmParameterException;":
+        "import java.security.InvalidAlgorithmParameterException;",
+    "import javax.crypto.spec.MGF1ParameterSpec;":
+        "import java.security.spec.MGF1ParameterSpec;",
+    "import java.security.spec.PSource;":
+        "import javax.crypto.spec.PSource;",
+}
+
 # Extract fenced Java code if present.
 def _extract_fenced_java(text: str) -> tuple[str, bool]:
     # Prefer ```java ... ```
@@ -716,10 +725,76 @@ def _normalize_public_class_name(java_code: str, desired: str = "SecureUsageExam
     )
 
 
+def _dedupe_imports(java_code: str) -> str:
+    lines = java_code.splitlines()
+    import_lines = [i for i, ln in enumerate(lines) if re.match(r"^\s*import\s+[\w.]+\s*;\s*$", ln)]
+    if not import_lines:
+        return java_code
+
+    start, end = import_lines[0], import_lines[-1]
+    merged = []
+    seen = set()
+    for i in range(start, end + 1):
+        imp = lines[i].strip()
+        if imp not in seen:
+            merged.append(imp)
+            seen.add(imp)
+    lines[start:end + 1] = merged
+    return "\n".join(lines)
+
+
+def normalize_known_api_mistakes(java_code: str) -> str:
+    for bad, good in CANONICAL_IMPORT_REWRITES.items():
+        java_code = java_code.replace(bad, good)
+
+    # Prefer singleton constant for PSource when model invents invalid constructor usage.
+    java_code = re.sub(
+        r"(\bPSource\s+\w+\s*=\s*)new\s+PSource\s*\(\s*PSource\.PSpecified\.DEFAULT\s*\)",
+        r"\1PSource.PSpecified.DEFAULT",
+        java_code,
+    )
+    java_code = re.sub(
+        r"new\s+PSource\s*\(\s*PSource\.PSpecified\.DEFAULT\s*\)",
+        "PSource.PSpecified.DEFAULT",
+        java_code,
+    )
+
+    # Common invalid TrustAnchor overload hallucination.
+    java_code = re.sub(
+        r"new\s+TrustAnchor\s*\(\s*([A-Za-z_][A-Za-z0-9_]*)\s*,\s*([A-Za-z_][A-Za-z0-9_]*)\s*\)",
+        r"new TrustAnchor(\1, (byte[]) null)",
+        java_code,
+    )
+
+    # Frequent over-specific checked catches in constructor-only snippets.
+    java_code = re.sub(
+        r"catch\s*\(\s*NoSuchAlgorithmException\s*\|\s*InvalidAlgorithmParameterException\s+([A-Za-z_][A-Za-z0-9_]*)\s*\)",
+        r"catch (Exception \1)",
+        java_code,
+    )
+    java_code = re.sub(
+        r"catch\s*\(\s*InvalidAlgorithmParameterException\s*\|\s*NoSuchAlgorithmException\s+([A-Za-z_][A-Za-z0-9_]*)\s*\)",
+        r"catch (Exception \1)",
+        java_code,
+    )
+
+    # If code calls getSubjectX500Principal() on Certificate, force X509Certificate typing.
+    if "getSubjectX500Principal()" in java_code:
+        java_code = java_code.replace(
+            "import java.security.cert.Certificate;",
+            "import java.security.cert.X509Certificate;",
+        )
+        # Replace raw Certificate type usage with X509Certificate (covers params, locals, fields).
+        java_code = re.sub(r"\bCertificate\b", "X509Certificate", java_code)
+
+    return _dedupe_imports(java_code)
+
+
 # Add missing imports for whitelisted symbols and normalize class name.
 def auto_import_patch(llm_text: str) -> str:
     java_code, had_fence = _extract_fenced_java(llm_text)
     java_code = _normalize_public_class_name(java_code, "SecureUsageExample")
+    java_code = normalize_known_api_mistakes(java_code)
 
     needed = []
     for sym, fq in IMPORT_WHITELIST.items():
@@ -758,6 +833,7 @@ def auto_import_patch(llm_text: str) -> str:
         lines[insert_at:insert_at] = to_insert
 
     patched = "\n".join(lines).strip()
+    patched = normalize_known_api_mistakes(patched)
     return _rewrap_fenced_java(patched, had_fence)
 
 # Resolve javac binary (with optional CI override).
@@ -767,20 +843,24 @@ def _javac_cmd() -> Optional[str]:
     return cmd if which(cmd) else None
 
 # Compile generated Java and return (ok, error_text).
-def compile_java(java_code: str) -> tuple[bool, str]:
+def compile_java(java_code: str, compile_classpath: Optional[str], java_release: str) -> tuple[bool, str]:
     javac = _javac_cmd()
     if not javac:
         return False, "javac not found on PATH (or JAVAC_BIN)."
 
     java_code = _normalize_public_class_name(java_code, "SecureUsageExample")
+    java_code = normalize_known_api_mistakes(java_code)
 
     with tempfile.TemporaryDirectory() as td:
         src = Path(td) / "SecureUsageExample.java"
         src.write_text(java_code, encoding="utf-8")
 
-        # --release 17 enforces Java 17 compatibility (matches your prompt)
+        cmd = [javac, "--release", str(java_release).strip(), str(src)]
+        if compile_classpath and compile_classpath.strip():
+            cmd = [javac, "--release", str(java_release).strip(), "-cp", compile_classpath.strip(), str(src)]
+
         proc = subprocess.run(
-            [javac, "--release", "17", str(src)],
+            cmd,
             capture_output=True,
             text=True,
             timeout=20,
@@ -797,7 +877,9 @@ def process_rule(
     model: str,
     pdf_path: Optional[Path],
     emb_model: str,
-    rules_dir: Path
+    rules_dir: Path,
+    compile_classpath: Optional[str],
+    java_release: str,
 ) -> Optional[str]:
     """
     Primer-only mode:
@@ -915,7 +997,7 @@ def process_rule(
         javac_missing_is_fatal = os.getenv("CRYSLDOC_JAVAC_REQUIRED", "1").strip() == "1"
         max_repairs = int(os.getenv("CRYSLDOC_MAX_REPAIRS", "7"))
 
-        ok, err = compile_java(java_only)
+        ok, err = compile_java(java_only, compile_classpath=compile_classpath, java_release=java_release)
 
         # If javac isn't available, decide whether to fail or skip
         if (not ok) and ("javac not found" in (err or "").lower()):
@@ -935,7 +1017,8 @@ def process_rule(
                 + f"\n\nCompilation failed (repair attempt {attempt}/{max_repairs}).\n"
                 "Fix ONLY compilation errors. Do NOT change CrySL ORDER/CONSTRAINTS/REQUIRES logic.\n"
                 "Do NOT add forbidden APIs.\n"
-                "Prefer the simplest valid Java 17 overloads; avoid uncommon overloads unless required by the contract.\n"
+                f"Target Java release is {java_release}. Use exact JDK/API signatures visible in compiler diagnostics.\n"
+                "For constructor/spec classes, prefer minimal API-accurate examples instead of extra helper logic.\n"
                 "Return the full corrected file in one ```java fenced block.\n\n"
                 "Compiler output:\n"
                 + err
@@ -954,9 +1037,14 @@ def process_rule(
             repaired_raw = repair_resp.choices[0].message.content.strip()
             repaired_patched = auto_import_patch(repaired_raw)
             repaired_java, _ = _extract_fenced_java(repaired_patched)
+            repaired_java = normalize_known_api_mistakes(repaired_java)
 
             # compile repaired candidate
-            ok, err = compile_java(repaired_java)
+            ok, err = compile_java(
+                repaired_java,
+                compile_classpath=compile_classpath,
+                java_release=java_release,
+            )
             if ok:
                 java_only = repaired_java
                 break
@@ -1010,6 +1098,16 @@ def parse_args() -> argparse.Namespace:
         default="text-embedding-3-small",
         help="Embedding model used for primer retrieval from the CrySL PDF.",
     )
+    parser.add_argument(
+        "--compile-classpath",
+        default="",
+        help="Classpath passed to javac for compile validation.",
+    )
+    parser.add_argument(
+        "--java-release",
+        default="21",
+        help="Java release flag for javac compile validation (e.g., 21).",
+    )
     return parser.parse_args()
 
 
@@ -1022,6 +1120,8 @@ def main() -> None:
     pdf_path = Path(args.pdf) if args.pdf else None
 
     rules_dir = Path(args.rules_dir)
+    compile_classpath = args.compile_classpath
+    java_release = str(args.java_release)
 
     process_rule(
         json_path=json_path,
@@ -1030,6 +1130,8 @@ def main() -> None:
         pdf_path=pdf_path,
         emb_model=args.emb_model,
         rules_dir=rules_dir,
+        compile_classpath=compile_classpath,
+        java_release=java_release,
     )
 
 if __name__ == "__main__":

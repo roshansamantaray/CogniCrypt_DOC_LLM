@@ -26,6 +26,71 @@ public class DocumentGeneratorMain {
 
 	// Shared reader for filesystem-based CrySL rules.
 	private static final CrySLRuleReader ruleReader = new CrySLRuleReader();
+    private static final List<String> CRITICAL_STARTUP_CLASSES = List.of(
+            "de.upb.docgen.writer.FreeMarkerWriter",
+            "freemarker.template.Configuration",
+            "de.upb.docgen.llm.LLMService"
+    );
+
+    /**
+     * Fail fast if critical runtime classes are missing on the current classpath.
+     */
+    private static void runStartupPreflight() {
+        ClassLoader cl = DocumentGeneratorMain.class.getClassLoader();
+        for (String className : CRITICAL_STARTUP_CLASSES) {
+            try {
+                Class.forName(className, false, cl);
+            } catch (ClassNotFoundException e) {
+                String cp = System.getProperty("java.class.path", "");
+                throw new IllegalStateException(
+                        "Startup preflight failed. Missing class: " + className + ". " +
+                                "Please reload Maven project and rebuild. Active classpath: " + cp,
+                        e
+                );
+            }
+        }
+    }
+
+    private static boolean isRetryablePlaceholder(String content, boolean secure) {
+        if (content == null) return false;
+        String txt = content.trim();
+        String unavailable = secure ? "// LLM secure example unavailable." : "// LLM insecure example unavailable.";
+        String disabled = secure ? "// LLM secure example disabled by flag." : "// LLM insecure example disabled by flag.";
+        String failedPrefix = secure ? "// LLM secure example failed:" : "// LLM insecure example failed:";
+        return txt.equals(unavailable) || txt.equals(disabled) || txt.startsWith(failedPrefix);
+    }
+
+    private static boolean isFailurePlaceholder(String content, boolean secure) {
+        return isRetryablePlaceholder(content, secure);
+    }
+
+    private static String failureReason(String content, boolean secure) {
+        if (content == null) return "unknown";
+        String txt = content.trim();
+        String failedPrefix = secure ? "// LLM secure example failed:" : "// LLM insecure example failed:";
+        if (txt.startsWith(failedPrefix)) {
+            String reason = txt.substring(failedPrefix.length()).trim();
+            return reason.isEmpty() ? "generation failed" : reason;
+        }
+        return "example unavailable";
+    }
+
+    private static void writeCodegenFailureReport(File codeCacheDir, List<String> failures) throws IOException {
+        File report = new File(codeCacheDir, "llm_codegen_failures.txt");
+        StringBuilder sb = new StringBuilder();
+        sb.append("LLM code generation failure report").append(System.lineSeparator());
+        sb.append("Generated at: ").append(new Date()).append(System.lineSeparator());
+        sb.append(System.lineSeparator());
+        if (failures == null || failures.isEmpty()) {
+            sb.append("No LLM code generation failures.").append(System.lineSeparator());
+        } else {
+            for (String failure : failures) {
+                sb.append("- ").append(failure).append(System.lineSeparator());
+            }
+        }
+        Files.writeString(report.toPath(), sb.toString());
+        System.out.println("Codegen failure report: " + report.getPath());
+    }
 
 	/**
 	 * Entry point: loads CrySL rules, builds composed docs, optionally runs LLM steps,
@@ -40,6 +105,7 @@ public class DocumentGeneratorMain {
             DocSettings docSettings = DocSettings.getInstance();
             System.out.println("Parsing CLI Flags");
             docSettings.parseSettingsFromCLI(args);
+            runStartupPreflight();
 
             // Load CrySL rules either from user-provided folder or bundled JAR resources.
             System.out.println("Reading CrySL Rules");
@@ -258,6 +324,7 @@ public class DocumentGeneratorMain {
             // LLM cache for code examples (secure/insecure per rule).
             File codeCacheDir = new File("Output/resources/code_cache");
             codeCacheDir.mkdirs();
+            List<String> codegenFailures = new ArrayList<>();
 
             for (int i = 0; i < cryslRuleList.size(); i++) {
                 CrySLRule rule = cryslRuleList.get(i);
@@ -272,42 +339,61 @@ public class DocumentGeneratorMain {
 
                 if (DocSettings.getInstance().isGenLlmExamples()) {
                     // ----- LLM examples ENABLED -----
-                    if (secureFile.exists()) {
-                        secure = Files.readString(secureFile.toPath());
-                        System.out.println(ruleName + "_secure.txt exists.");
-                    } else {
-                        try {
-                            // If your generator fills both secure and insecure, one call is enough
-                            CrySLToLLMGenerator.generateExample(List.of(composedRule), List.of(rule));
-                            String gen = composedRule.getSecureExample();
-                            secure = cleanLLMCodeBlock(gen != null ? gen : "");
-                            if (secure.isBlank()) {
-                                secure = "// LLM secure example unavailable.";
-                            }
-                        } catch (Exception e) {
-                            secure = "// LLM secure example failed: " + e.getMessage();
+                    String existingSecure = secureFile.exists() ? Files.readString(secureFile.toPath()) : null;
+                    String existingInsecure = insecureFile.exists() ? Files.readString(insecureFile.toPath()) : null;
+                    boolean secureNeedsGeneration = existingSecure == null || isRetryablePlaceholder(existingSecure, true);
+                    boolean insecureNeedsGeneration = existingInsecure == null || isRetryablePlaceholder(existingInsecure, false);
+
+                    String generatedSecure = null;
+                    String generatedInsecure = null;
+                    String generationError = null;
+
+                    if (secureNeedsGeneration || insecureNeedsGeneration) {
+                        if (existingSecure != null && isRetryablePlaceholder(existingSecure, true)) {
+                            System.out.println(ruleName + "_secure.txt contains placeholder; regenerating.");
                         }
-                        Files.writeString(secureFile.toPath(), secure);
-                        System.out.println(ruleName + "_secure.txt created.");
+                        if (existingInsecure != null && isRetryablePlaceholder(existingInsecure, false)) {
+                            System.out.println(ruleName + "_insecure.txt contains placeholder; regenerating.");
+                        }
+                        try {
+                            CrySLToLLMGenerator.generateExample(List.of(composedRule), List.of(rule));
+                            generatedSecure = cleanLLMCodeBlock(
+                                    composedRule.getSecureExample() != null ? composedRule.getSecureExample() : "");
+                            generatedInsecure = cleanLLMCodeBlock(
+                                    composedRule.getInsecureExample() != null ? composedRule.getInsecureExample() : "");
+                        } catch (Exception e) {
+                            generationError = e.getMessage();
+                        }
                     }
 
-                    if (insecureFile.exists()) {
-                        insecure = Files.readString(insecureFile.toPath());
-                        System.out.println(ruleName + "_insecure.txt exists.");
-                    } else {
-                        // Many generators populate both examples at once; reuse if present
-                        String gen = composedRule.getInsecureExample();
-                        if (gen == null || gen.isBlank()) {
-                            // If not already set, you may call the generator again (or keep a placeholder)
-                            // CrySLToLLMGenerator.generateExample(List.of(composedRule), List.of(rule));
-                            gen = composedRule.getInsecureExample();
+                    if (secureNeedsGeneration) {
+                        if (generatedSecure != null && !generatedSecure.isBlank()) {
+                            secure = generatedSecure;
+                        } else if (generationError != null && !generationError.isBlank()) {
+                            secure = "// LLM secure example failed: " + generationError;
+                        } else {
+                            secure = "// LLM secure example unavailable.";
                         }
-                        insecure = cleanLLMCodeBlock(gen != null ? gen : "");
-                        if (insecure.isBlank()) {
+                        Files.writeString(secureFile.toPath(), secure);
+                        System.out.println(ruleName + "_secure.txt " + (existingSecure == null ? "created." : "updated."));
+                    } else {
+                        secure = existingSecure;
+                        System.out.println(ruleName + "_secure.txt exists.");
+                    }
+
+                    if (insecureNeedsGeneration) {
+                        if (generatedInsecure != null && !generatedInsecure.isBlank()) {
+                            insecure = generatedInsecure;
+                        } else if (generationError != null && !generationError.isBlank()) {
+                            insecure = "// LLM insecure example failed: " + generationError;
+                        } else {
                             insecure = "// LLM insecure example unavailable.";
                         }
                         Files.writeString(insecureFile.toPath(), insecure);
-                        System.out.println(ruleName + "_insecure.txt created.");
+                        System.out.println(ruleName + "_insecure.txt " + (existingInsecure == null ? "created." : "updated."));
+                    } else {
+                        insecure = existingInsecure;
+                        System.out.println(ruleName + "_insecure.txt exists.");
                     }
                 } else {
                     // ----- LLM examples DISABLED -----
@@ -334,7 +420,17 @@ public class DocumentGeneratorMain {
                 // Attach code examples to the composed rule for template rendering.
                 composedRule.setSecureExample(secure);
                 composedRule.setInsecureExample(insecure);
+
+                if (DocSettings.getInstance().isGenLlmExamples()) {
+                    if (isFailurePlaceholder(secure, true)) {
+                        codegenFailures.add(rule.getClassName() + " [secure]: " + failureReason(secure, true));
+                    }
+                    if (isFailurePlaceholder(insecure, false)) {
+                        codegenFailures.add(rule.getClassName() + " [insecure]: " + failureReason(insecure, false));
+                    }
+                }
             }
+            writeCodegenFailureReport(codeCacheDir, codegenFailures);
 
             // Freemarker Setup and create cognicryptdoc html pages
             System.out.println("Setup Freemarker");

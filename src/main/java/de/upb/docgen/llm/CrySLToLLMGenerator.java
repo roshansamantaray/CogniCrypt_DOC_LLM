@@ -228,6 +228,9 @@ public class CrySLToLLMGenerator {
             } catch (IOException e) {
                 System.err.println("LLM Code generation failed for " + cryslData.get("className"));
                 e.printStackTrace();
+                String reason = e.getMessage() == null ? "unknown error" : e.getMessage().replace('\n', ' ');
+                composedRule.setSecureExample("// LLM secure example failed: " + reason);
+                composedRule.setInsecureExample("// LLM insecure example failed: " + reason);
             }
         }
     }
