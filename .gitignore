@@ -2,6 +2,7 @@ target/
 ClassDiagram.png
 ClassDiagram.ucls
 Output/
+Output_temp/
 .classpath
 .project
 .settings/

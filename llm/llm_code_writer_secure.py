@@ -30,6 +30,7 @@ FILENAME_TEMPLATE = "sanitized_rule_{fqcn}_{lang}.json"
 SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
 
 DEFAULT_GATEWAY_BASE_URL = "https://ai-gateway.uni-paderborn.de/v1/"
+DEFAULT_GATEWAY_CHAT_MODEL = "gwdg.qwen3-30b-a3b-instruct-2507"
 OPENAI_DEFAULT_CHAT_MODEL = "gpt-4o-mini"
 OPENAI_DEFAULT_EMB_MODEL = "text-embedding-3-small"
 
@@ -97,10 +98,8 @@ def _resolve_models_for_backend(backend: str, chat_model_arg: Optional[str], emb
         emb_model = emb_model_cli or OPENAI_DEFAULT_EMB_MODEL
         return chat_model, emb_model
 
-    chat_model = chat_model_cli or os.getenv("GATEWAY_CHAT_MODEL", "").strip()
+    chat_model = chat_model_cli or os.getenv("GATEWAY_CHAT_MODEL", "").strip() or DEFAULT_GATEWAY_CHAT_MODEL
     emb_model = emb_model_cli or os.getenv("GATEWAY_EMB_MODEL", "").strip()
-    if not chat_model:
-        raise RuntimeError("GATEWAY_CHAT_MODEL is not set (or pass --model) for gateway backend.")
     if not emb_model:
         raise RuntimeError("GATEWAY_EMB_MODEL is not set (or pass --emb-model) for gateway backend.")
     return chat_model, emb_model
@@ -1167,7 +1166,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         default=None,
-        help="Override chat model (gateway requires this or GATEWAY_CHAT_MODEL).",
+        help=(
+            "Override chat model. In gateway mode, fallback is "
+            "GATEWAY_CHAT_MODEL or the default gwdg.qwen3-30b-a3b-instruct-2507."
+        ),
     )
     parser.add_argument(
         "--pdf",

@@ -14,6 +14,7 @@ from utils.gateway_rate_limit import wait_for_gateway_slot
 """
 
 DEFAULT_GATEWAY_BASE_URL = "https://ai-gateway.uni-paderborn.de/v1/"
+DEFAULT_GATEWAY_CHAT_MODEL = "gwdg.qwen3-30b-a3b-instruct-2507"
 OPENAI_DEFAULT_CHAT_MODEL = "gpt-4o-mini"
 
 # Load environment variables for API access.
@@ -40,10 +41,7 @@ def _resolve_chat_model(backend: str, cli_model: Optional[str]) -> str:
         return cli_model.strip()
     if backend == "openai":
         return OPENAI_DEFAULT_CHAT_MODEL
-    gateway_model = os.getenv("GATEWAY_CHAT_MODEL", "").strip()
-    if not gateway_model:
-        raise RuntimeError("GATEWAY_CHAT_MODEL is not set (or pass --model) for gateway backend.")
-    return gateway_model
+    return os.getenv("GATEWAY_CHAT_MODEL", "").strip() or DEFAULT_GATEWAY_CHAT_MODEL
 
 
 def parse_args() -> argparse.Namespace:
@@ -63,7 +61,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--model",
         default=None,
-        help="Override chat model. For gateway, otherwise GATEWAY_CHAT_MODEL must be set.",
+        help=(
+            "Override chat model. In gateway mode, fallback is "
+            "GATEWAY_CHAT_MODEL or the default gwdg.qwen3-30b-a3b-instruct-2507."
+        ),
     )
     return parser.parse_args()
 
