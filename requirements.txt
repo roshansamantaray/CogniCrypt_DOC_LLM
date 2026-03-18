@@ -9,3 +9,6 @@ openai
 
 # Vector index (imported as `faiss`)
 faiss-cpu
+
+# Tests
+pytest

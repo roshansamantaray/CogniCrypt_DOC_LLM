@@ -67,7 +67,7 @@ Make sure that the response is in **utf-8** charset only."""
         else fr"""Respond in **{explanation_language}** and be as precise as possible."""
     )
 
-    # Keep prompt body centralized here so both OpenAI and Ollama wrappers share
+    # Keep prompt body centralized here so both OpenAI and gateway wrappers share
     # identical task framing and section requirements.
     prompt = fr"""
 You are a cryptography expert who explains complex CrySL rules to Java developers in clear, natural language.
@@ -335,7 +335,7 @@ def run_writer_main(
     process_rule_fn: Callable[..., Optional[str]],
 ) -> None:
     """
-    Shared CLI orchestration for OpenAI/Ollama writer entrypoints.
+    Shared CLI orchestration for OpenAI/gateway writer entrypoints.
 
     Responsibilities:
     - environment loading and CLI default resolution

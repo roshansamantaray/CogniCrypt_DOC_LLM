@@ -227,7 +227,7 @@ public class DocSettings {
                     }
                     if (settings[i].toLowerCase().startsWith("--llm-backend=")) {
                         String v = settings[i].substring("--llm-backend=".length()).trim().toLowerCase();
-                        if (v.equals("openai") || v.equals("ollama")) {
+                        if (v.equals("openai") || v.equals("gateway")) {
                             llmBackend = v;
                         } else {
                             showErrorMessage(settings[i]);
@@ -274,7 +274,7 @@ public class DocSettings {
             "  --llm=<on|off|true|false|1|0>\n" +
             "  --llm-explanations=<on|off|true|false|1|0>\n" +
             "  --llm-examples=<on|off|true|false|1|0>\n" +
-            "  --llm-backend=<openai|ollama>\n";
+            "  --llm-backend=<openai|gateway>\n";
 
         System.out.println(errorMessage);
     }
@@ -307,7 +307,7 @@ public class DocSettings {
             "  --llm=<on|off|true|false|1|0>\n" +
             "  --llm-explanations=<on|off|true|false|1|0>\n" +
             "  --llm-examples=<on|off|true|false|1|0>\n" +
-            "  --llm-backend=<openai|ollama>\n";
+            "  --llm-backend=<openai|gateway>\n";
 
         System.out.println(errorMessage);
     }

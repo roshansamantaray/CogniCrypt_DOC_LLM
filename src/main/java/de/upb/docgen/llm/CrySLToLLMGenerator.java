@@ -135,7 +135,7 @@ public class CrySLToLLMGenerator {
     /**
      * Build structured CrySL data and request secure/insecure example code.
      */
-    public static void generateExample (List<ComposedRule> composedRuleList, List<CrySLRule> crySLRuleList) {
+    public static void generateExample (List<ComposedRule> composedRuleList, List<CrySLRule> crySLRuleList, String backend) {
         // Build a compact rule summary and request both secure and insecure examples.
         for (int i = 0; i < composedRuleList.size(); i++) {
             ComposedRule composedRule = composedRuleList.get(i);
@@ -219,8 +219,8 @@ public class CrySLToLLMGenerator {
 
             try {
                 // One call per example type (secure/insecure).
-                String secure = LLMService.getLLMExample(new HashMap<>(cryslData), "secure");
-                String insecure = LLMService.getLLMExample(new HashMap<>(cryslData), "insecure");
+                String secure = LLMService.getLLMExample(new HashMap<>(cryslData), "secure", backend);
+                String insecure = LLMService.getLLMExample(new HashMap<>(cryslData), "insecure", backend);
 
                 composedRule.setSecureExample(secure);
                 composedRule.setInsecureExample(insecure);

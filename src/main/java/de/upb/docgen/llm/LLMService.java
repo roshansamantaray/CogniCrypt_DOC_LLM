@@ -9,6 +9,8 @@ import java.util.*;
 import java.util.regex.Pattern;
 import java.util.concurrent.TimeUnit;
 import com.google.gson.Gson;
+import de.upb.docgen.DocSettings;
+import de.upb.docgen.utils.CachePathResolver;
 import de.upb.docgen.utils.Utils;
 
 /**
@@ -110,7 +112,14 @@ public class LLMService {
     public static Map<String, String> getLLMExplanation(Map<String, String> cryslData, List<String> LANGUAGES, String backend) throws IOException {
         Gson gson = new Gson();
         // Choose backend-specific Python script.
-        String pythonScriptPath = backend.equalsIgnoreCase("openai") ? "llm/llm_writer.py" : "llm/llm_writer_ollama.py";
+        String pythonScriptPath;
+        if (backend.equalsIgnoreCase("openai")) {
+            pythonScriptPath = "llm/llm_writer.py";
+        } else if (backend.equalsIgnoreCase("gateway")) {
+            pythonScriptPath = "llm/llm_writer_gateway.py";
+        } else {
+            throw new IOException("Unsupported LLM backend: " + backend);
+        }
         Map<String, String> result = new HashMap<>();
 
         // Prepare temp/sanitized folders under llm/.
@@ -121,8 +130,13 @@ public class LLMService {
         Files.createDirectories(tempFolder);
         Files.createDirectories(sanitizedFolder);
 
-        // Cache folder for explanation outputs.
-        Path cacheFolder = PROJECT_ROOT.resolve("Output").resolve("resources").resolve("llm_cache");
+        // Cache folder for explanation outputs under reportPath/resources.
+        Path cacheFolder;
+        try {
+            cacheFolder = CachePathResolver.resolveLlmCacheDir(DocSettings.getInstance().getReportDirectory());
+        } catch (IllegalArgumentException e) {
+            throw new IOException("Unable to resolve LLM cache directory from --reportPath.", e);
+        }
         Files.createDirectories(cacheFolder);
 
         String pythonPath = resolvePythonExecutable();
@@ -207,11 +221,16 @@ public class LLMService {
     /**
      * Generate a secure or insecure example via the Python sidecar.
      */
-    public static String getLLMExample(Map<String, String> cryslData, String type) throws IOException {
+    public static String getLLMExample(Map<String, String> cryslData, String type, String backend) throws IOException {
         // Mark the request type (secure/insecure) and write a temp JSON input.
         cryslData.put("exampleType", type);
         Gson gson = new Gson();
         String json = gson.toJson(cryslData);
+
+        String backendNormalized = backend == null ? "" : backend.trim().toLowerCase(Locale.ROOT);
+        if (!backendNormalized.equals("openai") && !backendNormalized.equals("gateway")) {
+            throw new IOException("Unsupported LLM backend for examples: " + backend);
+        }
 
         Path tempFile = PROJECT_ROOT.resolve("llm").resolve("temp_example_" + type + ".json");
         Files.createDirectories(tempFile.getParent());
@@ -230,6 +249,7 @@ public class LLMService {
                 pythonPath,
                 pythonScriptPath,
                 tempFile.toString(),
+                "--backend", backendNormalized,
                 "--rules-dir", rulesDir
         ));
         if ("secure".equalsIgnoreCase(type)) {

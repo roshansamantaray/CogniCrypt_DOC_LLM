@@ -264,8 +264,8 @@ public class DocumentGeneratorMain {
 
 // LLM Call for Explanation (fixed)
 
-            // LLM cache for explanations (one file per class/language).
-            File cacheDir = new File("Output/resources/llm_cache");
+            // LLM cache for explanations (one file per class/language) under reportPath/resources.
+            File cacheDir = CachePathResolver.resolveLlmCacheDir(docSettings.getReportDirectory()).toFile();
             Files.createDirectories(cacheDir.toPath());
 
 // 1. Generate all explanations once (adjust if API differs)
@@ -321,9 +321,9 @@ public class DocumentGeneratorMain {
             }
             //LLM Call for Secure and Insecure Code Generation
 
-            // LLM cache for code examples (secure/insecure per rule).
-            File codeCacheDir = new File("Output/resources/code_cache");
-            codeCacheDir.mkdirs();
+            // LLM cache for code examples (secure/insecure per rule) under reportPath/resources.
+            File codeCacheDir = CachePathResolver.resolveCodeCacheDir(docSettings.getReportDirectory()).toFile();
+            Files.createDirectories(codeCacheDir.toPath());
             List<String> codegenFailures = new ArrayList<>();
 
             for (int i = 0; i < cryslRuleList.size(); i++) {
@@ -356,7 +356,7 @@ public class DocumentGeneratorMain {
                             System.out.println(ruleName + "_insecure.txt contains placeholder; regenerating.");
                         }
                         try {
-                            CrySLToLLMGenerator.generateExample(List.of(composedRule), List.of(rule));
+                            CrySLToLLMGenerator.generateExample(List.of(composedRule), List.of(rule), docSettings.getLlmBackend());
                             generatedSecure = cleanLLMCodeBlock(
                                     composedRule.getSecureExample() != null ? composedRule.getSecureExample() : "");
                             generatedInsecure = cleanLLMCodeBlock(
