@@ -4,21 +4,22 @@ import os
 import sys
 from typing import Optional
 
-from dotenv import load_dotenv
 from openai import OpenAI
 
 from utils.gateway_rate_limit import wait_for_gateway_slot
+from utils.llm_env import (
+    get_gateway_base_url,
+    get_gateway_chat_model,
+    get_openai_chat_model,
+    load_llm_env,
+)
 
 """
     @author: Roshan Samantaray
 """
 
-DEFAULT_GATEWAY_BASE_URL = "https://ai-gateway.uni-paderborn.de/v1/"
-DEFAULT_GATEWAY_CHAT_MODEL = "gwdg.qwen3-30b-a3b-instruct-2507"
-OPENAI_DEFAULT_CHAT_MODEL = "gpt-4o-mini"
-
 # Load environment variables for API access.
-load_dotenv()
+load_llm_env()
 
 
 def _require_env(var_name: str) -> str:
@@ -32,7 +33,7 @@ def _build_client(backend: str) -> OpenAI:
     if backend == "openai":
         return OpenAI(api_key=_require_env("OPENAI_API_KEY"))
     api_key = _require_env("GATEWAY_API_KEY")
-    base_url = os.getenv("GATEWAY_BASE_URL", DEFAULT_GATEWAY_BASE_URL).strip() or DEFAULT_GATEWAY_BASE_URL
+    base_url = get_gateway_base_url()
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
@@ -40,8 +41,8 @@ def _resolve_chat_model(backend: str, cli_model: Optional[str]) -> str:
     if cli_model and cli_model.strip():
         return cli_model.strip()
     if backend == "openai":
-        return OPENAI_DEFAULT_CHAT_MODEL
-    return os.getenv("GATEWAY_CHAT_MODEL", "").strip() or DEFAULT_GATEWAY_CHAT_MODEL
+        return get_openai_chat_model()
+    return get_gateway_chat_model()
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,8 +63,8 @@ def parse_args() -> argparse.Namespace:
         "--model",
         default=None,
         help=(
-            "Override chat model. In gateway mode, fallback is "
-            "GATEWAY_CHAT_MODEL or the default gwdg.qwen3-30b-a3b-instruct-2507."
+            "Override chat model. If unset, resolve from OPENAI_CHAT_MODEL or "
+            "GATEWAY_CHAT_MODEL in llm/.env (with built-in fallbacks)."
         ),
     )
     return parser.parse_args()

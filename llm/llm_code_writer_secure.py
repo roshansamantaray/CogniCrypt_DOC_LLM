@@ -10,17 +10,23 @@ import tempfile
 from shutil import which
 
 import numpy as np
-from dotenv import load_dotenv
 from openai import OpenAI
 
 from utils.gateway_rate_limit import wait_for_gateway_slot
+from utils.llm_env import (
+    get_gateway_base_url,
+    get_gateway_chat_model,
+    get_openai_chat_model,
+    get_openai_emb_model,
+    load_llm_env,
+)
 
 try:
     sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
     pass
 
-load_dotenv()
+load_llm_env()
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 RULES_DIR = PROJECT_ROOT / "src" / "main" / "resources" / "CrySLRules"
@@ -28,12 +34,6 @@ SANITIZED_DIR = PROJECT_ROOT / "llm" / "sanitized_rules"
 PDF_PATH = PROJECT_ROOT / "tse19CrySL.pdf"
 FILENAME_TEMPLATE = "sanitized_rule_{fqcn}_{lang}.json"
 SANITIZED_DIR.mkdir(parents=True, exist_ok=True)
-
-DEFAULT_GATEWAY_BASE_URL = "https://ai-gateway.uni-paderborn.de/v1/"
-DEFAULT_GATEWAY_CHAT_MODEL = "gwdg.qwen3-30b-a3b-instruct-2507"
-OPENAI_DEFAULT_CHAT_MODEL = "gpt-4o-mini"
-OPENAI_DEFAULT_EMB_MODEL = "text-embedding-3-small"
-
 
 # Cache for sanitized rules to avoid repeated disk IO.
 _SANITIZED_CACHE: Dict[Tuple[str, str], Optional[Dict]] = {}
@@ -85,7 +85,7 @@ def _build_client_for_backend(backend: str) -> OpenAI:
     if backend == "openai":
         return OpenAI(api_key=_require_env("OPENAI_API_KEY"))
     api_key = _require_env("GATEWAY_API_KEY")
-    base_url = os.getenv("GATEWAY_BASE_URL", DEFAULT_GATEWAY_BASE_URL).strip() or DEFAULT_GATEWAY_BASE_URL
+    base_url = get_gateway_base_url()
     return OpenAI(api_key=api_key, base_url=base_url)
 
 
@@ -94,11 +94,11 @@ def _resolve_models_for_backend(backend: str, chat_model_arg: Optional[str], emb
     emb_model_cli = (emb_model_arg or "").strip()
 
     if backend == "openai":
-        chat_model = chat_model_cli or OPENAI_DEFAULT_CHAT_MODEL
-        emb_model = emb_model_cli or OPENAI_DEFAULT_EMB_MODEL
+        chat_model = chat_model_cli or get_openai_chat_model()
+        emb_model = emb_model_cli or get_openai_emb_model()
         return chat_model, emb_model
 
-    chat_model = chat_model_cli or os.getenv("GATEWAY_CHAT_MODEL", "").strip() or DEFAULT_GATEWAY_CHAT_MODEL
+    chat_model = chat_model_cli or get_gateway_chat_model()
     emb_model = emb_model_cli or os.getenv("GATEWAY_EMB_MODEL", "").strip()
     if not emb_model:
         raise RuntimeError("GATEWAY_EMB_MODEL is not set (or pass --emb-model) for gateway backend.")
@@ -1167,8 +1167,8 @@ def parse_args() -> argparse.Namespace:
         "--model",
         default=None,
         help=(
-            "Override chat model. In gateway mode, fallback is "
-            "GATEWAY_CHAT_MODEL or the default gwdg.qwen3-30b-a3b-instruct-2507."
+            "Override chat model. If unset, resolve from OPENAI_CHAT_MODEL or "
+            "GATEWAY_CHAT_MODEL in llm/.env (with built-in fallbacks)."
         ),
     )
     parser.add_argument(
@@ -1179,7 +1179,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--emb-model",
         default=None,
-        help="Override embedding model (gateway requires this or GATEWAY_EMB_MODEL).",
+        help=(
+            "Override embedding model. If unset, OpenAI uses OPENAI_EMB_MODEL and "
+            "gateway requires GATEWAY_EMB_MODEL."
+        ),
     )
     parser.add_argument(
         "--compile-classpath",

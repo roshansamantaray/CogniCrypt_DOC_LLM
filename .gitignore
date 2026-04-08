@@ -20,3 +20,6 @@ rag_cache/
 __pycache__/
 *.py[cod]
 llm/.venv/
+.settings/
+.run/
+.vscode/

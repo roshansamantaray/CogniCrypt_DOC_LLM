@@ -181,6 +181,14 @@ pip install -r requirements.txt
 ```
 
 ### OpenAI backend
+Copy `llm/.env.example` to `llm/.env`, then set:
+
+```bash
+OPENAI_API_KEY=<your_key>
+OPENAI_CHAT_MODEL=gpt-4o-mini
+OPENAI_EMB_MODEL=text-embedding-3-small
+```
+
 Set:
 
 ```bash
@@ -193,8 +201,19 @@ Use:
 Notes:
 - OpenAI backend is used for explanations and code examples.
 - `OPENAI_API_KEY` is required when running with `--llm-backend=openai`.
+- `OPENAI_CHAT_MODEL` and `OPENAI_EMB_MODEL` can live in `llm/.env`; the code writers use them as defaults when `--model` / `--emb-model` are not provided.
 
 ### Gateway backend (UPB AI-Gateway)
+Set in `llm/.env` or export directly:
+
+```bash
+GATEWAY_API_KEY=<your_gateway_key>
+GATEWAY_BASE_URL=https://ai-gateway.uni-paderborn.de/v1/
+GATEWAY_CHAT_MODEL=gwdg.qwen3-30b-a3b-instruct-2507
+GATEWAY_EMB_MODEL=<gateway_embedding_model>
+GATEWAY_RPM=10
+```
+
 Set:
 
 ```bash
@@ -222,7 +241,7 @@ Notes:
 - Gateway backend is used for both explanations and secure/insecure code examples.
 - Example scripts are invoked internally with `--backend=<openai|gateway>` from Java; no fallback to OpenAI is performed in gateway mode.
 - For gateway-backed secure examples, `GATEWAY_EMB_MODEL` is required.
-- If `GATEWAY_CHAT_MODEL` is unset, the gateway chat default for explanations and examples is `gwdg.qwen3-30b-a3b-instruct-2507`.
+- The secure/insecure code writers read `GATEWAY_BASE_URL` and `GATEWAY_CHAT_MODEL` from `llm/.env` first, then fall back to the built-in UPB defaults.
 - Gateway requests (chat + embeddings, including examples) are throttled client-side using a shared cross-process limiter with default `GATEWAY_RPM=10` (set `GATEWAY_RPM` to override).
 
 ### First-time run (required for LLM features)
