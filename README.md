@@ -105,6 +105,33 @@ For IntelliJ runs:
 - Reload Maven project after dependency changes.
 - Rebuild the project before running (`Build > Rebuild Project`).
 - If startup preflight reports missing classes, rebuild first and ensure the Maven classpath is active.
+## Running CrySLDoc from the Command Line
+
+The IntelliJ run configuration can be reproduced with a small Bash script.
+
+### Prerequisite
+
+Make sure the project is run with **Java 21**.  
+The main class `de.upb.docgen.DocumentGeneratorMain` is compiled for class file version **65.0**, which corresponds to Java 21.
+
+You can verify your Java version with:
+
+```bash
+java -version
+mvn -version
+````
+Make it executable and run it with:
+
+```bash
+chmod +x run_crysldoc.sh
+./run_crysldoc.sh
+```
+
+### Notes
+
+* This script is the command-line equivalent of the IntelliJ **CrySLDoc Generation** run configuration.
+* If Java 17 or lower is used, the application will fail with `UnsupportedClassVersionError`.
+* Adjust `JAVA_HOME` if Java 21 is installed in a different location on your system.
 
 ## CLI Usage
 ### Required
