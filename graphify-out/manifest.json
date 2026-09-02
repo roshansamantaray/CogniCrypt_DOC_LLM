@@ -1,0 +1,356 @@
+{
+  ".vscode/settings.json": {
+    "mtime": 1786987030.2633617,
+    "seen": 1787847554.1907105,
+    "ast_hash": "02b3eb60247e53d65530f7557002e61d",
+    "semantic_hash": "02b3eb60247e53d65530f7557002e61d"
+  },
+  "llm/.gateway_rate_limit_state.json": {
+    "mtime": 1787943501.5706277,
+    "seen": 1788017002.0117998,
+    "ast_hash": "70e6d82fab53b851657f80b584f28037",
+    "semantic_hash": "70e6d82fab53b851657f80b584f28037"
+  },
+  "llm/llm_code_writer_insecure.py": {
+    "mtime": 1787202107.4741495,
+    "seen": 1787847554.1907153,
+    "ast_hash": "0264b4ae103197d607fa276b096ef5bd",
+    "semantic_hash": "0264b4ae103197d607fa276b096ef5bd"
+  },
+  "llm/llm_code_writer_secure.py": {
+    "mtime": 1787202146.4904218,
+    "seen": 1787847554.1907165,
+    "ast_hash": "f7d2f42caa3a230cc80e7f1c4f83ef0c",
+    "semantic_hash": "f7d2f42caa3a230cc80e7f1c4f83ef0c"
+  },
+  "llm/llm_writer.py": {
+    "mtime": 1787062501.0321598,
+    "seen": 1787847554.1907172,
+    "ast_hash": "c9e99fb5c290cea6b31afd0696f3830d",
+    "semantic_hash": "c9e99fb5c290cea6b31afd0696f3830d"
+  },
+  "llm/llm_writer_gateway.py": {
+    "mtime": 1787202087.4010093,
+    "seen": 1787847554.1907177,
+    "ast_hash": "988e97f5ea39df44cb1f6a2f216c73ad",
+    "semantic_hash": "988e97f5ea39df44cb1f6a2f216c73ad"
+  },
+  "llm/paper_index.py": {
+    "mtime": 1787062501.0323238,
+    "seen": 1787847554.1907184,
+    "ast_hash": "41fe9638aee0d1393a13df5b8d7dda57",
+    "semantic_hash": "41fe9638aee0d1393a13df5b8d7dda57"
+  },
+  "llm/paper_index_gateway.py": {
+    "mtime": 1787062501.0323634,
+    "seen": 1787847554.190719,
+    "ast_hash": "01d7b5e84f29e3479dbebbd33ff64536",
+    "semantic_hash": "01d7b5e84f29e3479dbebbd33ff64536"
+  },
+  "llm/tests/test_delete_disabled_code_cache_files.py": {
+    "mtime": 1786987030.2712045,
+    "seen": 1787847554.1907196,
+    "ast_hash": "ec47b2a69c51b0b56b2cad874e3a991e",
+    "semantic_hash": "ec47b2a69c51b0b56b2cad874e3a991e"
+  },
+  "llm/utils/__init__.py": {
+    "mtime": 1786987030.2712045,
+    "seen": 1787847554.1907203,
+    "ast_hash": "c18d33a54fa68c19f74ff6ebd87e4adf",
+    "semantic_hash": "c18d33a54fa68c19f74ff6ebd87e4adf"
+  },
+  "llm/utils/gateway_rate_limit.py": {
+    "mtime": 1787209816.0987363,
+    "seen": 1787847554.1907208,
+    "ast_hash": "1ec42472a15bd7bbb8dbf06b229b41ab",
+    "semantic_hash": "1ec42472a15bd7bbb8dbf06b229b41ab"
+  },
+  "llm/utils/llm_env.py": {
+    "mtime": 1787062465.0878878,
+    "seen": 1787847554.1907213,
+    "ast_hash": "db4c9b71b15e75e90a83b577ad86cdfb",
+    "semantic_hash": "db4c9b71b15e75e90a83b577ad86cdfb"
+  },
+  "llm/utils/llm_utils.py": {
+    "mtime": 1787063587.3048954,
+    "seen": 1787847554.190722,
+    "ast_hash": "b60f557c53307c1f461b62556655b884",
+    "semantic_hash": "b60f557c53307c1f461b62556655b884"
+  },
+  "llm/utils/rag_index_common.py": {
+    "mtime": 1787035856.3643374,
+    "seen": 1787847554.1907225,
+    "ast_hash": "1a517b6458f65265327069857705d0fe",
+    "semantic_hash": "1a517b6458f65265327069857705d0fe"
+  },
+  "llm/utils/writer_core.py": {
+    "mtime": 1787145397.6163263,
+    "seen": 1787847554.1907232,
+    "ast_hash": "e15fc855d1f941ee78cee10272db5894",
+    "semantic_hash": "e15fc855d1f941ee78cee10272db5894"
+  },
+  "pom.xml": {
+    "mtime": 1786987030.2716806,
+    "seen": 1787847554.190724,
+    "ast_hash": "8477bf14ce4778c5ab7cc6d0096ee3ad",
+    "semantic_hash": "8477bf14ce4778c5ab7cc6d0096ee3ad"
+  },
+  "run_crysldoc.sh": {
+    "mtime": 1787851018.9805634,
+    "seen": 1787873453.4183683,
+    "ast_hash": "0473a8668328a21723b45a7f853128ce",
+    "semantic_hash": "0473a8668328a21723b45a7f853128ce"
+  },
+  "scripts/delete_disabled_code_cache_files.py": {
+    "mtime": 1787035823.362625,
+    "seen": 1787847554.1907248,
+    "ast_hash": "146494fd3d4d04027bf5f7cd25e5fb3a",
+    "semantic_hash": "146494fd3d4d04027bf5f7cd25e5fb3a"
+  },
+  "src/main/java/de/upb/docgen/ClassEventForb.java": {
+    "mtime": 1787062417.918863,
+    "seen": 1787847554.1907253,
+    "ast_hash": "f6b0e88057727a8513ae6716d6819ad7",
+    "semantic_hash": "f6b0e88057727a8513ae6716d6819ad7"
+  },
+  "src/main/java/de/upb/docgen/ComposedRule.java": {
+    "mtime": 1787079120.6973956,
+    "seen": 1787847554.190726,
+    "ast_hash": "88c6043601195164b62e8b0ce62b820a",
+    "semantic_hash": "88c6043601195164b62e8b0ce62b820a"
+  },
+  "src/main/java/de/upb/docgen/ConstraintCrySLInstanceof.java": {
+    "mtime": 1787062556.1464667,
+    "seen": 1787847554.1907268,
+    "ast_hash": "89b3343f44474e4c07da53d8c08abc1a",
+    "semantic_hash": "89b3343f44474e4c07da53d8c08abc1a"
+  },
+  "src/main/java/de/upb/docgen/ConstraintCrySLVC.java": {
+    "mtime": 1787062556.1465874,
+    "seen": 1787847554.1907272,
+    "ast_hash": "baf299fd0902b9c57918268adc9711c2",
+    "semantic_hash": "baf299fd0902b9c57918268adc9711c2"
+  },
+  "src/main/java/de/upb/docgen/ConstraintCrySLandencmode.java": {
+    "mtime": 1787062556.1462626,
+    "seen": 1787847554.190728,
+    "ast_hash": "c54fead52c515641dcde3e33379db6dd",
+    "semantic_hash": "c54fead52c515641dcde3e33379db6dd"
+  },
+  "src/main/java/de/upb/docgen/ConstraintCryslnocallto.java": {
+    "mtime": 1787060060.0741162,
+    "seen": 1787847554.1907284,
+    "ast_hash": "d4efe5034c95b32754d580b9f75032f8",
+    "semantic_hash": "d4efe5034c95b32754d580b9f75032f8"
+  },
+  "src/main/java/de/upb/docgen/ConstraintsComparison.java": {
+    "mtime": 1787035722.3808544,
+    "seen": 1787847554.190729,
+    "ast_hash": "5fc152a69fb12ab58d1139c9a55b4adc",
+    "semantic_hash": "5fc152a69fb12ab58d1139c9a55b4adc"
+  },
+  "src/main/java/de/upb/docgen/ConstraintsPred.java": {
+    "mtime": 1787060098.9253469,
+    "seen": 1787847554.1907296,
+    "ast_hash": "f55da5d84bc01bdb672b68cc3a150233",
+    "semantic_hash": "f55da5d84bc01bdb672b68cc3a150233"
+  },
+  "src/main/java/de/upb/docgen/ConstraintsVc.java": {
+    "mtime": 1787062556.1465492,
+    "seen": 1787847554.1907303,
+    "ast_hash": "b0812406036251fe3f55f4faeabd2736",
+    "semantic_hash": "b0812406036251fe3f55f4faeabd2736"
+  },
+  "src/main/java/de/upb/docgen/DocSettings.java": {
+    "mtime": 1787035329.6028373,
+    "seen": 1787847554.1907308,
+    "ast_hash": "b021a5be96d576c9cd9e0f0f57d30bdb",
+    "semantic_hash": "b021a5be96d576c9cd9e0f0f57d30bdb"
+  },
+  "src/main/java/de/upb/docgen/DocumentGeneratorMain.java": {
+    "mtime": 1787938240.8969016,
+    "seen": 1788017002.0118248,
+    "ast_hash": "fb65b083df64fd8a690f6153470735a2",
+    "semantic_hash": "fb65b083df64fd8a690f6153470735a2"
+  },
+  "src/main/java/de/upb/docgen/Ensures.java": {
+    "mtime": 1787059966.3008914,
+    "seen": 1787847554.190732,
+    "ast_hash": "863ea21b53729691f5985b3102b43be4",
+    "semantic_hash": "863ea21b53729691f5985b3102b43be4"
+  },
+  "src/main/java/de/upb/docgen/EnsuresCaseTwo.java": {
+    "mtime": 1787060179.4360363,
+    "seen": 1787847554.1907325,
+    "ast_hash": "779f879672a2854aab3bdc6cb9231a37",
+    "semantic_hash": "779f879672a2854aab3bdc6cb9231a37"
+  },
+  "src/main/java/de/upb/docgen/FunctionUtils.java": {
+    "mtime": 1787062556.143464,
+    "seen": 1787847554.190733,
+    "ast_hash": "8f28761615de3ac3437f4b104319d9ba",
+    "semantic_hash": "8f28761615de3ac3437f4b104319d9ba"
+  },
+  "src/main/java/de/upb/docgen/Negates.java": {
+    "mtime": 1787053200.6467676,
+    "seen": 1787847554.1907337,
+    "ast_hash": "b942ff053f031d2bc007aeffec09a85e",
+    "semantic_hash": "b942ff053f031d2bc007aeffec09a85e"
+  },
+  "src/main/java/de/upb/docgen/Order.java": {
+    "mtime": 1787059268.9967802,
+    "seen": 1787847554.1907341,
+    "ast_hash": "a8b675ac5a6e9e68c277597815a22175",
+    "semantic_hash": "a8b675ac5a6e9e68c277597815a22175"
+  },
+  "src/main/java/de/upb/docgen/crysl/CrySLReader.java": {
+    "mtime": 1787053963.5517662,
+    "seen": 1787847554.1907349,
+    "ast_hash": "c60dec7129007aac7e3419be661ddf64",
+    "semantic_hash": "c60dec7129007aac7e3419be661ddf64"
+  },
+  "src/main/java/de/upb/docgen/graphviz/StateMachineToGraphviz.java": {
+    "mtime": 1787063442.3087142,
+    "seen": 1787847554.1907353,
+    "ast_hash": "ccace7202111794b2f69227d20de32ed",
+    "semantic_hash": "ccace7202111794b2f69227d20de32ed"
+  },
+  "src/main/java/de/upb/docgen/llm/CrySLToLLMGenerator.java": {
+    "mtime": 1787938240.896481,
+    "seen": 1788017002.0118308,
+    "ast_hash": "1e3ed78ca6de4471a915fadee1958e37",
+    "semantic_hash": "1e3ed78ca6de4471a915fadee1958e37"
+  },
+  "src/main/java/de/upb/docgen/llm/LLMService.java": {
+    "mtime": 1787153913.6652002,
+    "seen": 1787847554.1907363,
+    "ast_hash": "5c69da0fee24f34fd526a20fcb6cdefc",
+    "semantic_hash": "5c69da0fee24f34fd526a20fcb6cdefc"
+  },
+  "src/main/java/de/upb/docgen/utils/CachePathResolver.java": {
+    "mtime": 1786987030.2727857,
+    "seen": 1787847554.1907372,
+    "ast_hash": "f5ff655abf195c88443610fb5c70d815",
+    "semantic_hash": "f5ff655abf195c88443610fb5c70d815"
+  },
+  "src/main/java/de/upb/docgen/utils/GraphSanitizer.java": {
+    "mtime": 1786987030.272856,
+    "seen": 1787847554.190738,
+    "ast_hash": "21d1d404ee30d55f574d657fdff675bb",
+    "semantic_hash": "21d1d404ee30d55f574d657fdff675bb"
+  },
+  "src/main/java/de/upb/docgen/utils/GraphVerification.java": {
+    "mtime": 1786987030.2729142,
+    "seen": 1787847554.1907384,
+    "ast_hash": "c2c653e883ab634102fd19836d053c1a",
+    "semantic_hash": "c2c653e883ab634102fd19836d053c1a"
+  },
+  "src/main/java/de/upb/docgen/utils/PredicateTreeGenerator.java": {
+    "mtime": 1787079120.6972876,
+    "seen": 1787847554.190739,
+    "ast_hash": "38895d24f23a38e73fe493d206b1249c",
+    "semantic_hash": "38895d24f23a38e73fe493d206b1249c"
+  },
+  "src/main/java/de/upb/docgen/utils/TemplateAbsolutePathLoader.java": {
+    "mtime": 1786987030.2729142,
+    "seen": 1787847554.1907396,
+    "ast_hash": "e62fced2d697de1646930c9ba1b60e95",
+    "semantic_hash": "e62fced2d697de1646930c9ba1b60e95"
+  },
+  "src/main/java/de/upb/docgen/utils/TreeNode.java": {
+    "mtime": 1786987030.2729142,
+    "seen": 1787847554.1907408,
+    "ast_hash": "d200bc0c563e509fb6f8a617cda82e8b",
+    "semantic_hash": "d200bc0c563e509fb6f8a617cda82e8b"
+  },
+  "src/main/java/de/upb/docgen/utils/Utils.java": {
+    "mtime": 1787076703.757189,
+    "seen": 1787847554.1907413,
+    "ast_hash": "dfb08ab1480b07424f1b95ee190d352b",
+    "semantic_hash": "dfb08ab1480b07424f1b95ee190d352b"
+  },
+  "src/main/java/de/upb/docgen/writer/FreeMarkerWriter.java": {
+    "mtime": 1787123031.481062,
+    "seen": 1787847554.190742,
+    "ast_hash": "ad30ec2362d2865ad6066808f1d2f938",
+    "semantic_hash": "ad30ec2362d2865ad6066808f1d2f938"
+  },
+  "src/main/java/de/upb/userstudy/StringEncryption.java": {
+    "mtime": 1787062182.1399589,
+    "seen": 1787847554.1907425,
+    "ast_hash": "24e6e5376bf9af126c377a8c1fb2cd87",
+    "semantic_hash": "24e6e5376bf9af126c377a8c1fb2cd87"
+  },
+  "src/test/java/de/upb/docgen/utils/CachePathResolverTest.java": {
+    "mtime": 1786987030.2746043,
+    "seen": 1787847554.1907432,
+    "ast_hash": "a2a3af1c71657356af87fcb84d7f8e94",
+    "semantic_hash": "a2a3af1c71657356af87fcb84d7f8e94"
+  },
+  "AUDIT.md": {
+    "mtime": 1787874473.57773,
+    "seen": 1788017002.0118396,
+    "ast_hash": "0abf92161de1756a40067deff784ff72",
+    "semantic_hash": "0abf92161de1756a40067deff784ff72"
+  },
+  "PROJECT.md": {
+    "mtime": 1787874349.2774556,
+    "seen": 1788017002.0118442,
+    "ast_hash": "555fd75692da13fd74780f954e49e779",
+    "semantic_hash": "555fd75692da13fd74780f954e49e779"
+  },
+  "Presentation.md": {
+    "mtime": 1787211221.1781478,
+    "seen": 1787847554.1907449,
+    "ast_hash": "98fc355eaab11507f2011fe9b2294b7a",
+    "semantic_hash": "98fc355eaab11507f2011fe9b2294b7a"
+  },
+  "README.md": {
+    "mtime": 1787873909.9166598,
+    "seen": 1788017002.011845,
+    "ast_hash": "80e64b241cc5db25faf523a254d9e8fe",
+    "semantic_hash": "80e64b241cc5db25faf523a254d9e8fe"
+  },
+  "requirements.txt": {
+    "mtime": 1786987030.2716806,
+    "seen": 1787847554.1907458,
+    "ast_hash": "acae4da4b2f5c6608cc6e2e95556f4de",
+    "semantic_hash": "acae4da4b2f5c6608cc6e2e95556f4de"
+  },
+  "tse19CrySL.pdf": {
+    "mtime": 1786987030.2769141,
+    "seen": 1787847554.1907465,
+    "ast_hash": "a90eac2f576512b172ae913a0b4edab1",
+    "semantic_hash": "a90eac2f576512b172ae913a0b4edab1"
+  },
+  "CRYSLDOC_REPORT_GATEWAY.md": {
+    "mtime": 1787858662.427833,
+    "seen": 1787873453.4183927,
+    "ast_hash": "a3c036995adbf92af33dec8931fa1767",
+    "semantic_hash": "a3c036995adbf92af33dec8931fa1767"
+  },
+  "CRYSLDOC_REPORT_OPENAI.md": {
+    "mtime": 1787856375.604796,
+    "seen": 1787873453.4183936,
+    "ast_hash": "0d53bd59ab285e410ec0fe3636ac529d",
+    "semantic_hash": "0d53bd59ab285e410ec0fe3636ac529d"
+  },
+  "docs/CODEBASE_ANALYSIS.md": {
+    "mtime": 1787874349.2777176,
+    "seen": 1788017002.0118458,
+    "ast_hash": "df4b909747610e65a408759d6c94c006",
+    "semantic_hash": "df4b909747610e65a408759d6c94c006"
+  },
+  "CRYSLDOC_REPORT_GATEWAY_GPT54MINI.md": {
+    "mtime": 1787937369.422772,
+    "seen": 1788017002.0118415,
+    "ast_hash": "583682dee3a193c0e5548cb90aec3b2d",
+    "semantic_hash": "583682dee3a193c0e5548cb90aec3b2d"
+  },
+  "CRYSLDOC_REPORT_GATEWAY_O4MINI.md": {
+    "mtime": 1787943693.9928749,
+    "seen": 1788017002.0118423,
+    "ast_hash": "2969ecb91b8d8cb74d292f29f40c55fe",
+    "semantic_hash": "2969ecb91b8d8cb74d292f29f40c55fe"
+  }
+}

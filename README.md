@@ -184,11 +184,17 @@ regenerated if they fail. These control that gate.
 
 | Variable | Default | Effect |
 |---|---|---|
-| `CRYSLDOC_LLM_EXPLANATION_TIMEOUT_SECONDS` | `300` | Wall-clock ceiling for one explanation sidecar call. |
+| `CRYSLDOC_LLM_EXPLANATION_TIMEOUT_SECONDS` | `480` | Wall-clock ceiling for one explanation sidecar call. |
 | `CRYSLDOC_LLM_EXAMPLE_TIMEOUT_SECONDS` | `900` | Ceiling for one example call. Larger because a secure example may run the compile-and-repair loop, which is several completions plus several `javac` invocations. |
-| `LLM_MAX_RETRIES` | `4` | Client-side retries on transient API errors (429, 5xx). |
-| `LLM_TIMEOUT_SECONDS` | `90` | Per-request client timeout. |
+| `LLM_MAX_RETRIES` | `4` | Client-side retries on transient API errors (429, 5xx). The shipped `llm/.env` sets `2`. |
+| `LLM_TIMEOUT_SECONDS` | `90` | Per-request client timeout. The shipped `llm/.env` sets `120`. |
 | `GATEWAY_RPM` | `10` | Request-rate ceiling for the gateway backend, enforced across processes. |
+
+The two layers must stay ordered: the Python client's worst case,
+`(1 + LLM_MAX_RETRIES) x LLM_TIMEOUT_SECONDS`, has to fit inside the Java-side ceiling for
+the same call, or Java kills the sidecar mid-retry and the work is lost rather than
+retried. With the shipped `llm/.env` values that is 360 s against a 480 s explanation
+ceiling.
 
 ### Diagnostics
 

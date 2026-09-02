@@ -155,8 +155,11 @@ def call_with_concurrency_backoff(fn: Callable[[], T], operation: str = "request
     try:
         return fn()
     except Exception as exc:
-        if getattr(exc, "status_code", None) != 429:
-            raise
+        # Gate on the "Limit resets at" text itself rather than status_code == 429: GWDG
+        # sometimes double-wraps this same error as a 500 ("GwdgException - Error code:
+        # 429 - ...", the same wrapping pattern seen elsewhere from this gateway), so the
+        # SDK's outer status_code is 500 even though the cause and the reset time are the
+        # same 429 payload. The regex is specific enough to be a safe gate on its own.
         wait_seconds = _seconds_until_reset(str(exc), max_wait_seconds)
         if wait_seconds is None:
             raise
